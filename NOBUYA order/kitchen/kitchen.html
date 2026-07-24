@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>厨房モニター</title>
+  <style>
+    body { font-family: sans-serif; background-color: #121212; color: #ffffff; margin: 0; padding: 20px; }
+    h1 { margin-top: 0; font-size: 1.5rem; border-bottom: 2px solid #333; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .auto-refresh { font-size: 0.8rem; color: #4caf50; }
+    .order-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 20px; }
+    .order-card { background-color: #1e1e1e; border-radius: 8px; border-left: 6px solid #ff9800; padding: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); position: relative; }
+    .order-card.checkout-req { border-left-color: #e91e63; background-color: #2c121a; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px; }
+    .table-badge { font-size: 1.4rem; font-weight: bold; color: #fff; background: #333; padding: 2px 8px; border-radius: 4px; }
+    .order-time { font-size: 0.9rem; color: #aaa; }
+    .menu-name { font-size: 1.3rem; font-weight: bold; margin-bottom: 8px; word-break: break-all; }
+    .menu-qty { font-size: 1.5rem; color: #ffeb3b; font-weight: bold; text-align: right; }
+    .btn-group { display: flex; gap: 8px; margin-top: 15px; }
+    .btn { flex: 1; padding: 10px; border: none; border-radius: 4px; font-weight: bold; font-size: 1rem; cursor: pointer; text-align: center; }
+    .btn-done { background-color: #4caf50; color: white; }
+    .btn-cancel { background-color: #f44336; color: white; }
+    .oral-order-box { background: #252525; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444; }
+    .oral-order-title { font-weight: bold; margin-bottom: 10px; color: #81d4fa; }
+    .oral-form { display: flex; gap: 10px; flex-wrap: wrap; }
+    .oral-form select, .oral-form input { padding: 8px; font-size: 1rem; border-radius: 4px; border: 1px solid #555; background: #333; color: #fff; }
+    .btn-add { background: #2196f3; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <h1>
+    🍳 厨房モニター
+    <span class="auto-refresh">● 自動更新中 (5秒)</span>
+  </h1>
+
+  <div class="oral-order-box">
+    <div class="oral-order-title">➕ 口頭注文の代理入力</div>
+    <div class="oral-form">
+      <select id="oral-table">
+        <option value="A">A 番卓</option>
+        <option value="B">B 番卓</option>
+        <option value="C">C 番卓</option>
+        <option value="D">D 番卓</option>
+        <option value="E">E 番卓</option>
+      </select>
+      <select id="oral-menu">
+        <option value="">メニューを選択...</option>
+      </select>
+      <input type="number" id="oral-qty" value="1" min="1" max="10" style="width: 60px;">
+      <button class="btn-add" onclick="submitOralOrder()">注文追加</button>
+    </div>
+  </div>
+
+  <div class="order-grid" id="order-grid">
+    <p style="color:#aaa;">注文データを読み込み中...</p>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    let allMenusCache = [];
+
+    window.onload = () => {
+      loadKitchenData();
+      setInterval(loadKitchenData, CONFIG.REFRESH_INTERVAL);
+    };
+
+    function loadKitchenData() {
+      fetch(`${CONFIG.GAS_URL}?mode=kitchen`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.menus) {
+            allMenusCache = data.menus;
+            updateOralMenuSelect(data.menus);
+          }
+          renderOrders(data.orders || []);
+        })
+        .catch(err => console.error("データ取得エラー:", err));
+    }
+
+    function updateOralMenuSelect(menus) {
+      const select = document.getElementById('oral-menu');
+      const currentVal = select.value;
+      select.innerHTML = '<option value="">メニューを選択...</option>';
+      menus.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.menu_id;
+        opt.textContent = `${m.name} (${m.price}円)`;
+        select.appendChild(opt);
+      });
+      select.value = currentVal;
+    }
+
+    function renderOrders(orders) {
+      const grid = document.getElementById('order-grid');
+      grid.innerHTML = '';
+
+      if (orders.length === 0) {
+        grid.innerHTML = '<p style="color:#aaa; grid-column: 1/-1; text-align:center; padding: 40px 0;">現在、未対応の注文はありません。</p>';
+        return;
+      }
+
+      orders.forEach(order => {
+        const card = document.createElement('div');
+        const isCheckout = (order.status === '会計要請');
+        card.className = `order-card ${isCheckout ? 'checkout-req' : ''}`;
+
+        let actionBtns = '';
+        if (isCheckout) {
+          actionBtns = `<div style="color:#e91e63; font-weight:bold; text-align:center; padding:10px; font-size:1.2rem;">🚶‍♂️ お会計の呼び出し</div>`;
+        } else {
+          actionBtns = `
+            <div class="btn-group">
+              <button class="btn btn-done" onclick="updateStatus('${order.orderId}', '提供済', '${order.menuName}')">提供済</button>
+              <button class="btn btn-cancel" onclick="updateStatus('${order.orderId}', 'キャンセル', '${order.menuName}')">取消</button>
+            </div>
+          `;
+        }
+
+        card.innerHTML = `
+          <div class="card-header">
+            <span class="table-badge">${order.tableId} 卓</span>
+            <span class="order-time">${order.time}</span>
+          </div>
+          <div class="menu-name">${order.menuName}</div>
+          <div class="menu-qty">× ${order.quantity}</div>
+          ${actionBtns}
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function updateStatus(orderId, status, menuName) {
+      if(!confirm(`【${menuName}】を「${status}」にしますか？`)) return;
+
+      const params = new URLSearchParams();
+      params.append('action', 'update_status');
+      params.append('orderId', orderId);
+      params.append('status', status);
+
+      fetch(CONFIG.GAS_URL, {
+        method: 'POST',
+        body: params,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      })
+      .then(res => res.json())
+      .then(res => {
+        if(res.status === 'success') {
+          loadKitchenData();
+        } else {
+          alert("エラー: " + res.message);
+        }
+      })
+      .catch(err => alert("通信に失敗しました。"));
+    }
+
+    function submitOralOrder() {
+      const tableId = document.getElementById('oral-table').value;
+      const menuId = document.getElementById('oral-menu').value;
+      const quantity = document.getElementById('oral-qty').value;
+
+      if (!menuId) {
+        alert("メニューを選択してください。");
+        return;
+      }
+
+      const params = new URLSearchParams();
+      params.append('tableId', tableId);
+      params.append('menuId', menuId);
+      params.append('quantity', quantity);
+
+      fetch(CONFIG.GAS_URL, {
+        method: 'POST',
+        body: params,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      })
+      .then(res => res.json())
+      .then(res => {
+        if(res.status === 'success') {
+          alert("口頭注文を追加しました。");
+          loadKitchenData();
+        } else {
+          alert("エラー: " + res.message);
+        }
+      })
+      .catch(err => alert("通信に失敗しました。"));
+    }
+  </script>
+</body>
+</html>
