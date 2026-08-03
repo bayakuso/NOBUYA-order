@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>レジ会計モニター</title>
+  <style>
+    body { font-family: sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
+    h1 { margin-top: 0; font-size: 1.6rem; border-bottom: 2px solid #ccc; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+    .auto-refresh { font-size: 0.8rem; color: #2e7d32; }
+    .tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 20px; }
+    .table-card { background-color: #fff; border-radius: 8px; border: 2px solid #e0e0e0; padding: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    .table-card.requested { border-color: #e91e63; background-color: #fce4ec; animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(233, 30, 99, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(233, 30, 99, 0); } 100% { box-shadow: 0 0 0 0 rgba(233, 30, 99, 0); } }
+    .card-title { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 12px; }
+    .table-name { font-size: 1.4rem; font-weight: bold; }
+    .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+    .badge-calling { background: #e91e63; color: white; }
+    .badge-normal { background: #e0e0e0; color: #666; }
+    .order-list { max-height: 180px; overflow-y: auto; margin-bottom: 12px; font-size: 0.9rem; }
+    .order-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #eee; }
+    .total-price-box { font-size: 1.4rem; font-weight: bold; color: #d32f2f; text-align: right; margin-top: 10px; padding-top: 8px; border-top: 2px solid #333; }
+    .btn-checkout { width: 100%; background: #4caf50; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1.1rem; font-weight: bold; cursor: pointer; margin-top: 10px; }
+    .btn-checkout:hover { background: #43a047; }
+  </style>
+</head>
+<body>
+
+  <h1>
+    💳 レジ会計モニター
+    <span class="auto-refresh">● 自動更新中 (5秒)</span>
+  </h1>
+
+  <div class="tables-grid" id="tables-grid">
+    <p style="color:#666;">会計データを読み込み中...</p>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script>
+    const TABLES = ['A', 'B', 'C', 'D', 'E'];
+
+    window.onload = () => {
+      loadCashierData();
+      setInterval(loadCashierData, CONFIG.REFRESH_INTERVAL);
+    };
+
+    function loadCashierData() {
+      fetch(`${CONFIG.GAS_URL}?mode=kitchen&action=history`)
+        .then(res => res.json())
+        .then(data => {
+          renderCashierTables(data.orders || []);
+        })
+        .catch(err => console.error("データ取得エラー:", err));
+    }
+
+    function renderCashierTables(allOrders) {
+      const grid = document.getElementById('tables-grid');
+      grid.innerHTML = '';
+
+      TABLES.forEach(tableId => {
+        let tableOrders = allOrders.filter(o => String(o.tableId).trim() === tableId);
+
+        let lastCheckoutIndex = -1;
+        tableOrders.forEach(o => {
+          if (o.status === "会計済") {
+            const idx = parseInt(o.rowIndex, 10);
+            if (idx > lastCheckoutIndex) lastCheckoutIndex = idx;
+          }
+        });
+
+        let activeOrders = tableOrders.filter(o => parseInt(o.rowIndex, 10) > lastCheckoutIndex);
+
+        const isRequested = activeOrders.some(o => o.status === '会計要請');
+        const validOrders = activeOrders.filter(o => o.status !== 'キャンセル' && o.status !== '会計要請');
+
+        let totalPrice = 0;
+        let itemsHtml = '';
+
+        if (validOrders.length === 0) {
+          itemsHtml = '<div style="color:#aaa; text-align:center; padding:20px 0;">利用なし</div>';
+        } else {
+          validOrders.forEach(item => {
+            const price = Number(item.price) || 0;
+            const qty = Number(item.quantity) || 1;
+            const subtotal = price * qty;
+            totalPrice += subtotal;
+
+            itemsHtml += `
+              <div class="order-item">
+                <span>${item.menuName} × ${qty}</span>
+                <span>${subtotal.toLocaleString()} 円</span>
+              </div>
+            `;
+          });
+        }
+
+        const card = document.createElement('div');
+        card.className = `table-card ${isRequested ? 'requested' : ''}`;
+
+        card.innerHTML = `
+          <div class="card-title">
+            <span class="table-name">${tableId} 番卓</span>
+            <span class="status-badge ${isRequested ? 'badge-calling' : 'badge-normal'}">
+              ${isRequested ? '会計呼び出し中' : '着席中'}
+            </span>
+          </div>
+          <div class="order-list">
+            ${itemsHtml}
+          </div>
+          <div class="total-price-box">
+            合計: ${totalPrice.toLocaleString()} 円
+          </div>
+          ${validOrders.length > 0 ? `<button class="btn-checkout" onclick="settleTable('${tableId}')">会計完了処理</button>` : ''}
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    function settleTable(tableId) {
+      if (!confirm(`【${tableId}番卓】の会計を完了にし、卓を空けますか？`)) return;
+
+      const params = new URLSearchParams();
+      params.append('action', 'update_status');
+      params.append('orderId', 'SETTLE_' + tableId);
+      params.append('status', '会計済');
+      params.append('tableId', tableId);
+
+      fetch(CONFIG.GAS_URL, {
+        method: 'POST',
+        body: params,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      })
+      .then(res => res.json())
+      .then(res => {
+        if (res.status === 'success') {
+          alert(`【${tableId}番卓】の会計処理が完了しました。`);
+          loadCashierData();
+        } else {
+          alert("エラー: " + res.message);
+        }
+      })
+      .catch(err => alert("通信に失敗しました。"));
+    }
+  </script>
+</body>
+</html>
