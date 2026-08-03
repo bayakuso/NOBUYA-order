@@ -1,0 +1,355 @@
+// =================================================================
+// 居酒屋注文アプリ バックエンド処理 (Google Apps Script)
+// =================================================================
+
+// 連携対象のスプレッドシートID
+var SPREADSHEET_ID = "14o62z_RkEeBFQJ6GM_48cCVxt8L-_1D0u8OKWKJwXs";
+
+// -----------------------------------------------------------------
+// GETリクエスト処理（メニュー取得 / 厨房データ / 履歴データ）
+// -----------------------------------------------------------------
+function doGet(e) {
+  try {
+    var params = (e && e.parameter) ? e.parameter : {};
+    var mode = params.mode || "";
+    var action = params.action || "";
+
+    // 厨房モニターからのデータ取得要求
+    if (mode === "kitchen") {
+      return getKitchenData();
+    }
+    
+    // 客側の注文履歴取得要求（提供済みも含めて全件取得）
+    if (action === "history") {
+      return getOrderHistory(params.tableId || "");
+    }
+
+    // デフォルト: 客側アプリ用メニュー一覧の返却
+    return getMenuListResponse();
+  } catch (err) {
+    return makeJsonResponse({ status: "error", message: err.toString() });
+  }
+}
+
+// -----------------------------------------------------------------
+// POSTリクエスト処理（一括注文 / 会計要請 / ステータス変更 / 口頭注文）
+// -----------------------------------------------------------------
+function doPost(e) {
+  try {
+    var params = (e && e.parameter) ? e.parameter : {};
+    var action = params.action || "";
+
+    if (action === "bulk_order") {
+      return handleBulkOrder(e);
+    } else if (action === "checkout") {
+      return handleCheckoutRequest(params.tableId || "");
+    } else if (action === "update_status") {
+      return handleUpdateStatus(e);
+    } else if (params.menuId || params.menu_id) {
+      // 口頭注文等の単一追加処理
+      return handleSingleOrder(e);
+    }
+
+    return makeJsonResponse({ status: "error", message: "無効なアクションです" });
+  } catch (err) {
+    return makeJsonResponse({ status: "error", message: err.toString() });
+  }
+}
+
+// -----------------------------------------------------------------
+// 内部関数: スプレッドシートからメニューリストを配列化
+// -----------------------------------------------------------------
+function fetchMenuListInternal() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Menus") || ss.getSheetByName("メニュー");
+  if (!sheet) return [];
+
+  var displayData = sheet.getDataRange().getDisplayValues();
+  if (displayData.length <= 1) return [];
+
+  var menus = [];
+  for (var i = 1; i < displayData.length; i++) {
+    var row = displayData[i];
+    var itemName = row[1] ? row[1].trim() : "";
+    if (!itemName) continue;
+
+    var menuId = row[0] ? row[0].trim() : ("ITEM" + ("000" + i).slice(-3));
+    var rawPrice = row[2] ? String(row[2]) : "0";
+    var priceVal = parseInt(rawPrice.replace(/[^0-9]/g, ""), 10) || 0;
+    var category = row[3] ? row[3].trim() : "その他";
+    var imgBase64 = row[4] ? row[4].trim() : "";
+    var imgUrl = row[5] ? row[5].trim() : "";
+    var isOutOfStock = row[7] ? (String(row[7]).toUpperCase() === "TRUE") : false;
+    var options = row[8] ? row[8].trim() : "";
+
+    menus.push({
+      menu_id: menuId,
+      name: itemName,
+      price: priceVal,
+      category: category,
+      image_base64: imgBase64,
+      image: imgUrl,
+      is_out_of_stock: isOutOfStock,
+      options: options
+    });
+  }
+  return menus;
+}
+
+function getMenuListResponse() {
+  return makeJsonResponse(fetchMenuListInternal());
+}
+
+// -----------------------------------------------------------------
+// 厨房モニター用データの返却 (調理中・未提供・会計要請のみ)
+// -----------------------------------------------------------------
+function getKitchenData() {
+  try {
+    var menus = fetchMenuListInternal();
+    var allOrders = fetchOrdersInternal(""); 
+
+    var kitchenOrders = allOrders.filter(function(o) {
+      return o.status === "調理中" || o.status === "未提供" || o.status === "会計要請";
+    });
+
+    return makeJsonResponse({
+      menus: menus,
+      orders: kitchenOrders
+    });
+  } catch (err) {
+    return makeJsonResponse({ status: "error", message: err.toString(), menus: [], orders: [] });
+  }
+}
+
+// -----------------------------------------------------------------
+// 内部関数: スプレッドシートから注文一覧を配列化 (rowIndex付与)
+// -----------------------------------------------------------------
+function fetchOrdersInternal(tableId) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Orders") || ss.getSheetByName("注文履歴");
+  if (!sheet) return [];
+
+  var displayData = sheet.getDataRange().getDisplayValues();
+  if (displayData.length <= 1) return [];
+
+  var menus = fetchMenuListInternal();
+  var menuMap = {};
+  menus.forEach(function(m) {
+    menuMap[m.menu_id] = m;
+  });
+
+  var orders = [];
+  for (var i = 1; i < displayData.length; i++) {
+    var row = displayData[i];
+
+    var orderId   = row[0] ? row[0].trim() : "";
+    var currentTable = row[1] ? row[1].trim() : "";
+    var rawMenuVal = row[2] ? row[2].trim() : "";
+    var qtyVal    = parseInt(row[3], 10) || 1;
+    var statusVal = row[4] ? row[4].trim() : "";
+    var timeVal   = row[5] ? row[5].trim() : "";
+    var gColumnPrice = row[6] ? parseInt(String(row[6]).replace(/[^0-9]/g, ""), 10) || 0 : 0;
+
+    if (tableId && String(currentTable).trim() !== String(tableId).trim()) {
+      continue;
+    }
+
+    var itemName = rawMenuVal;
+    var itemPrice = gColumnPrice;
+
+    if (menuMap[rawMenuVal]) {
+      itemName = menuMap[rawMenuVal].name;
+      if (!itemPrice) itemPrice = menuMap[rawMenuVal].price;
+    }
+
+    orders.push({
+      rowIndex: (i + 1), // シート行番号（ヘッダー考慮）
+      orderId: orderId,
+      time: timeVal,
+      tableId: currentTable,
+      menuName: itemName,
+      name: itemName,
+      price: itemPrice,
+      quantity: qtyVal,
+      status: statusVal
+    });
+  }
+  return orders;
+}
+
+// -----------------------------------------------------------------
+// 客側用: 全注文ステータスを返却（提供済み・キャンセル含む）
+// -----------------------------------------------------------------
+function getOrderHistory(tableId) {
+  var orders = fetchOrdersInternal(tableId);
+  return makeJsonResponse({ orders: orders });
+}
+
+// -----------------------------------------------------------------
+// アクション処理: カート一括注文追加
+// -----------------------------------------------------------------
+function handleBulkOrder(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("Orders") || ss.getSheetByName("注文履歴");
+    if (!sheet) return makeJsonResponse({ status: "error", message: "注文履歴シートが見つかりません" });
+
+    var params = e.parameter || {};
+    var tableId = params.tableId || "1";
+    var cart = [];
+    
+    if (params.cart) {
+      cart = JSON.parse(params.cart);
+    }
+
+    var now = new Date();
+    var timeStr = Utilities.formatDate(now, "Asia/Tokyo", "HH:mm");
+
+    cart.forEach(function(item) {
+      var orderId = "ORD" + now.getTime() + "X" + Math.floor(Math.random() * 1000);
+      var menuDisplayName = item.name || item.menu_name || item.menu_id || "";
+
+      sheet.appendRow([
+        orderId,
+        tableId,
+        menuDisplayName,
+        item.quantity || 1,
+        "調理中",
+        timeStr,
+        item.price || 0
+      ]);
+    });
+
+    return makeJsonResponse({ status: "success" });
+  } catch (err) {
+    return makeJsonResponse({ status: "error", message: err.toString() });
+  }
+}
+
+// -----------------------------------------------------------------
+// アクション処理: 口頭注文（単一項目）追加
+// -----------------------------------------------------------------
+function handleSingleOrder(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("Orders") || ss.getSheetByName("注文履歴");
+    if (!sheet) return makeJsonResponse({ status: "error", message: "注文履歴シートが見つかりません" });
+
+    var params = e.parameter || {};
+    var tableId = params.tableId || "1";
+    var menuId = params.menuId || params.menu_id || "";
+    var quantity = parseInt(params.quantity, 10) || 1;
+
+    var menus = fetchMenuListInternal();
+    var menuItem = menus.find(function(m) { return m.menu_id === menuId; });
+
+    var menuDisplayName = menuItem ? menuItem.name : menuId;
+    var price = menuItem ? menuItem.price : 0;
+
+    var now = new Date();
+    var timeStr = Utilities.formatDate(now, "Asia/Tokyo", "HH:mm");
+    var orderId = "ORD" + now.getTime();
+
+    sheet.appendRow([
+      orderId,
+      tableId,
+      menuDisplayName,
+      quantity,
+      "調理中",
+      timeStr,
+      price
+    ]);
+
+    return makeJsonResponse({ status: "success" });
+  } catch (err) {
+    return makeJsonResponse({ status: "error", message: err.toString() });
+  }
+}
+
+// -----------------------------------------------------------------
+// アクション処理: 注文ステータス更新 (提供済 / キャンセル / 会計済)
+// -----------------------------------------------------------------
+function handleUpdateStatus(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
+    var sheet = ss.getSheetByName("Orders") || ss.getSheetByName("注文履歴");
+    if (!sheet) return makeJsonResponse({ status: "error", message: "注文履歴シートが見つかりません" });
+
+    var params = e.parameter || {};
+    var orderId = params.orderId || params.order_id || "";
+    var rowIndex = parseInt(params.rowIndex, 10);
+    var newStatus = params.status || "";
+    var tableId = params.tableId || "";
+
+    if (!newStatus) {
+      return makeJsonResponse({ status: "error", message: "ステータスが指定されていません" });
+    }
+
+    var displayData = sheet.getDataRange().getDisplayValues();
+
+    // 卓ごとの会計完了（一括ステータス変更）
+    if (orderId && orderId.indexOf("SETTLE_") === 0) {
+      var targetTable = tableId || orderId.replace("SETTLE_", "");
+      for (var i = 1; i < displayData.length; i++) {
+        if (String(displayData[i][1]).trim() === String(targetTable).trim() && displayData[i][4] !== "会計済") {
+          sheet.getRange(i + 1, 5).setValue("会計済");
+        }
+      }
+      return makeJsonResponse({ status: "success" });
+    }
+
+    // 1. orderId 一致による個別更新
+    if (orderId) {
+      var targetId = String(orderId).trim();
+      for (var i = 1; i < displayData.length; i++) {
+        var cellValue = String(displayData[i][0]).trim();
+        if (cellValue === targetId) {
+          sheet.getRange(i + 1, 5).setValue(newStatus);
+          return makeJsonResponse({ status: "success" });
+        }
+      }
+    }
+
+    // 2. rowIndex による個別更新
+    if (rowIndex && rowIndex <= displayData.length) {
+      sheet.getRange(rowIndex, 5).setValue(newStatus);
+      return makeJsonResponse({ status: "success" });
+    }
+
+    return makeJsonResponse({ status: "error", message: "該当の注文ID（" + orderId + "）が見つかりませんでした" });
+  } catch (err) {
+    return makeJsonResponse({ status: "error", message: err.toString() });
+  }
+}
+
+// -----------------------------------------------------------------
+// アクション処理: 会計要請の記録
+// -----------------------------------------------------------------
+function handleCheckoutRequest(tableId) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName("Orders") || ss.getSheetByName("注文履歴");
+  if (!sheet) return makeJsonResponse({ status: "error", message: "注文履歴シートが見つかりません" });
+
+  var now = new Date();
+  var timeStr = Utilities.formatDate(now, "Asia/Tokyo", "HH:mm");
+
+  sheet.appendRow([
+    "ORD" + now.getTime(),
+    tableId || "1",
+    "お会計要請",
+    1,
+    "会計要請",
+    timeStr,
+    0
+  ]);
+
+  return makeJsonResponse({ status: "success" });
+}
+
+// -----------------------------------------------------------------
+// レスポンス出力ヘルパー (JSON出力)
+// -----------------------------------------------------------------
+function makeJsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
