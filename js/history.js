@@ -1,6 +1,5 @@
 // js/history.js
 
-// 注文履歴モーダルを開く関数
 async function openHistoryModal() {
   const modal = document.getElementById('history-modal');
   if (modal) {
@@ -9,7 +8,6 @@ async function openHistoryModal() {
   await renderHistory();
 }
 
-// 注文履歴の描画処理
 async function renderHistory() {
   const container = document.getElementById('history-list-items');
   const bannerArea = document.getElementById('history-total-banner-area');
@@ -27,10 +25,12 @@ async function renderHistory() {
   container.innerHTML = '<p style="text-align:center; color:#666; padding:20px;">履歴を読み込み中...</p>';
 
   try {
-    // API経由で注文履歴を取得
     const orders = await API.getOrders(tableId);
 
-    // キャンセル以外の注文を対象にする
+    if (!Array.isArray(orders)) {
+      throw new Error(`データ形式が配列ではありません (取得結果: ${JSON.stringify(orders)})`);
+    }
+
     const validOrders = orders.filter(o => o.status !== 'キャンセル');
 
     if (validOrders.length === 0) {
@@ -48,12 +48,11 @@ async function renderHistory() {
       const qty = Number(order.quantity) || 1;
       const subtotal = price * qty;
 
-      // 提供済み、または受付中・調理中のものを合計に反映
       if (order.status !== '会計要請') {
         cumulativeTotal += subtotal;
       }
 
-      let statusColor = '#ff9800'; // 調理中/受付
+      let statusColor = '#ff9800';
       if (order.status === '提供済') statusColor = '#4caf50';
       if (order.status === '会計済') statusColor = '#9e9e9e';
 
@@ -73,13 +72,17 @@ async function renderHistory() {
 
     container.innerHTML = html;
 
-    // 合計金額表示と会計ボタンの制御
     if (totalEl) totalEl.textContent = `${cumulativeTotal.toLocaleString()} 円`;
     if (bannerArea) bannerArea.style.display = 'block';
     if (checkoutBtn) checkoutBtn.style.display = 'block';
 
   } catch (error) {
     console.error('履歴取得エラー:', error);
-    container.innerHTML = '<p style="text-align:center; color:#d32f2f; padding:20px;">履歴の取得に失敗しました。</p>';
+    // エラーの具体的内容を画面にそのまま表示
+    container.innerHTML = `<div style="text-align:left; color:#d32f2f; padding:15px; background:#ffebee; border-radius:6px; font-size:0.85rem; word-break:break-all;">
+      <strong>【取得エラー詳細】</strong><br>
+      ${error.message || error}<br><br>
+      ※卓番号: ${tableId}
+    </div>`;
   }
 }
