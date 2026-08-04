@@ -12,7 +12,7 @@
     .order-card { background-color: #1e1e1e; border-radius: 8px; border-left: 6px solid #ff9800; padding: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); position: relative; }
     .order-card.checkout-req { border-left-color: #e91e63; background-color: #2c121a; }
     .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px; }
-    .table-badge { font-size: 1.4rem; font-weight: bold; color: #fff; background: #333; padding: 2px 8px; border-radius: 4px; }
+    .table-badge { font-size: 1.2rem; font-weight: bold; color: #fff; background: #333; padding: 2px 8px; border-radius: 4px; }
     .order-time { font-size: 0.9rem; color: #aaa; }
     .menu-name { font-size: 1.3rem; font-weight: bold; margin-bottom: 8px; word-break: break-all; }
     .menu-qty { font-size: 1.5rem; color: #ffeb3b; font-weight: bold; text-align: right; }
@@ -38,11 +38,23 @@
     <div class="oral-order-title">➕ 口頭注文の代理入力</div>
     <div class="oral-form">
       <select id="oral-table">
-        <option value="A">A 番卓</option>
-        <option value="B">B 番卓</option>
-        <option value="C">C 番卓</option>
-        <option value="D">D 番卓</option>
-        <option value="E">E 番卓</option>
+        <optgroup label="カウンター">
+          <option value="1">カウンター 1番席</option>
+          <option value="2">カウンター 2番席</option>
+          <option value="3">カウンター 3番席</option>
+          <option value="4">カウンター 4番席</option>
+          <option value="5">カウンター 5番席</option>
+          <option value="6">カウンター 6番席</option>
+          <option value="7">カウンター 7番席</option>
+          <option value="8">カウンター 8番席</option>
+          <option value="9">カウンター 9番席</option>
+          <option value="10">カウンター 10番席</option>
+        </optgroup>
+        <optgroup label="テーブル">
+          <option value="T1">テーブル T1</option>
+          <option value="T2">テーブル T2</option>
+          <option value="T3">テーブル T3</option>
+        </optgroup>
       </select>
       <select id="oral-menu">
         <option value="">メニューを選択...</option>
@@ -64,6 +76,18 @@
       loadKitchenData();
       setInterval(loadKitchenData, CONFIG.REFRESH_INTERVAL);
     };
+
+    function formatTableName(tableId) {
+      if (!tableId) return '未設定';
+      const cleanId = String(tableId).trim();
+      if (/^T\d+$/i.test(cleanId)) {
+        return `テーブル ${cleanId.toUpperCase()}`;
+      }
+      if (!isNaN(cleanId)) {
+        return `カウンター ${cleanId}番席`;
+      }
+      return `${cleanId}番卓`;
+    }
 
     function loadKitchenData() {
       fetch(`${CONFIG.GAS_URL}?mode=kitchen`)
@@ -105,6 +129,8 @@
         const isCheckout = (order.status === '会計要請');
         card.className = `order-card ${isCheckout ? 'checkout-req' : ''}`;
 
+        const displayName = formatTableName(order.tableId);
+
         let actionBtns = '';
         if (isCheckout) {
           actionBtns = `<div style="color:#e91e63; font-weight:bold; text-align:center; padding:10px; font-size:1.2rem;">🚶‍♂️ お会計の呼び出し</div>`;
@@ -119,7 +145,7 @@
 
         card.innerHTML = `
           <div class="card-header">
-            <span class="table-badge">${order.tableId} 卓</span>
+            <span class="table-badge">${displayName}</span>
             <span class="order-time">${order.time}</span>
           </div>
           <div class="menu-name">${order.menuName}</div>
