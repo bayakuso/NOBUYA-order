@@ -8,20 +8,25 @@
     body { font-family: sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
     h1 { margin-top: 0; font-size: 1.6rem; border-bottom: 2px solid #ccc; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
     .auto-refresh { font-size: 0.8rem; color: #2e7d32; }
-    .tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 20px; }
-    .table-card { background-color: #fff; border-radius: 8px; border: 2px solid #e0e0e0; padding: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    .tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 20px; }
+    .table-card { background-color: #fff; border-radius: 8px; border: 2px solid #e0e0e0; padding: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; }
     .table-card.requested { border-color: #e91e63; background-color: #fce4ec; animation: pulse 2s infinite; }
+    .table-card.has-pending { border-color: #ffa000; }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(233, 30, 99, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(233, 30, 99, 0); } 100% { box-shadow: 0 0 0 0 rgba(233, 30, 99, 0); } }
     .card-title { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 12px; }
-    .table-name { font-size: 1.4rem; font-weight: bold; }
+    .table-name { font-size: 1.3rem; font-weight: bold; }
     .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
     .badge-calling { background: #e91e63; color: white; }
+    .badge-pending { background: #ffa000; color: white; }
     .badge-normal { background: #e0e0e0; color: #666; }
-    .order-list { max-height: 180px; overflow-y: auto; margin-bottom: 12px; font-size: 0.9rem; }
+    .order-list { max-height: 180px; overflow-y: auto; margin-bottom: 12px; font-size: 0.9rem; flex-grow: 1; }
     .order-item { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #eee; }
+    .order-item.cooking { color: #d97706; font-style: italic; }
+    .pending-alert { background-color: #fff3cd; color: #856404; padding: 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; margin-bottom: 8px; text-align: center; border: 1px solid #ffeeba; }
     .total-price-box { font-size: 1.4rem; font-weight: bold; color: #d32f2f; text-align: right; margin-top: 10px; padding-top: 8px; border-top: 2px solid #333; }
     .btn-checkout { width: 100%; background: #4caf50; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1.1rem; font-weight: bold; cursor: pointer; margin-top: 10px; }
     .btn-checkout:hover { background: #43a047; }
+    .btn-checkout:disabled { background: #ccc; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -37,12 +42,23 @@
 
   <script src="js/config.js"></script>
   <script>
-    const TABLES = ['A', 'B', 'C', 'D', 'E'];
+    // 13台（カウンター 1〜10、テーブル T1〜T3）の定義
+    const TABLES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'T1', 'T2', 'T3'];
 
     window.onload = () => {
       loadCashierData();
       setInterval(loadCashierData, CONFIG.REFRESH_INTERVAL);
     };
+
+    function formatTableName(tableId) {
+      if (/^T\d+$/i.test(tableId)) {
+        return `テーブル ${tableId.toUpperCase()}`;
+      }
+      if (!isNaN(tableId)) {
+        return `カウンター ${tableId}番席`;
+      }
+      return `${tableId}番卓`;
+    }
 
     function loadCashierData() {
       fetch(`${CONFIG.GAS_URL}?mode=kitchen&action=history`)
@@ -58,7 +74,7 @@
       grid.innerHTML = '';
 
       TABLES.forEach(tableId => {
-        let tableOrders = allOrders.filter(o => String(o.tableId).trim() === tableId);
+        let tableOrders = allOrders.filter(o => String(o.tableId).trim().toUpperCase() === tableId.toUpperCase());
 
         let lastCheckoutIndex = -1;
         tableOrders.forEach(o => {
@@ -68,49 +84,84 @@
           }
         });
 
+        // 前回会計完了後のアクティブな注文のみ抽出
         let activeOrders = tableOrders.filter(o => parseInt(o.rowIndex, 10) > lastCheckoutIndex);
 
         const isRequested = activeOrders.some(o => o.status === '会計要請');
-        const validOrders = activeOrders.filter(o => o.status !== 'キャンセル' && o.status !== '会計要請');
+        
+        // 注文状態の分解
+        const pendingOrders = activeOrders.filter(o => o.status === '受付' || o.status === '調理中');
+        const servedOrders = activeOrders.filter(o => o.status === '提供済');
 
         let totalPrice = 0;
         let itemsHtml = '';
 
-        if (validOrders.length === 0) {
-          itemsHtml = '<div style="color:#aaa; text-align:center; padding:20px 0;">利用なし</div>';
+        if (activeOrders.length === 0) {
+          itemsHtml = '<div style="color:#aaa; text-align:center; padding:20px 0;">空席 / 利用なし</div>';
         } else {
-          validOrders.forEach(item => {
+          activeOrders.forEach(item => {
+            if (item.status === 'キャンセル' || item.status === '会計要請') return;
+
             const price = Number(item.price) || 0;
             const qty = Number(item.quantity) || 1;
             const subtotal = price * qty;
-            totalPrice += subtotal;
+            
+            // 提供済みの商品のみ合計金額に計上
+            if (item.status === '提供済') {
+              totalPrice += subtotal;
+            }
+
+            const isPendingItem = item.status === '受付' || item.status === '調理中';
 
             itemsHtml += `
-              <div class="order-item">
-                <span>${item.menuName} × ${qty}</span>
+              <div class="order-item ${isPendingItem ? 'cooking' : ''}">
+                <span>${item.menuName} × ${qty} ${isPendingItem ? `[${item.status}]` : ''}</span>
                 <span>${subtotal.toLocaleString()} 円</span>
               </div>
             `;
           });
         }
 
+        const hasPending = pendingOrders.length > 0;
+        const displayName = formatTableName(tableId);
+
+        let badgeClass = 'badge-normal';
+        let badgeText = '着席中';
+        if (isRequested) {
+          badgeClass = 'badge-calling';
+          badgeText = '会計呼び出し中';
+        } else if (hasPending) {
+          badgeClass = 'badge-pending';
+          badgeText = '調理・提供中';
+        }
+
         const card = document.createElement('div');
-        card.className = `table-card ${isRequested ? 'requested' : ''}`;
+        card.className = `table-card ${isRequested ? 'requested' : ''} ${hasPending ? 'has-pending' : ''}`;
 
         card.innerHTML = `
-          <div class="card-title">
-            <span class="table-name">${tableId} 番卓</span>
-            <span class="status-badge ${isRequested ? 'badge-calling' : 'badge-normal'}">
-              ${isRequested ? '会計呼び出し中' : '着席中'}
-            </span>
+          <div>
+            <div class="card-title">
+              <span class="table-name">${displayName}</span>
+              <span class="status-badge ${badgeClass}">${badgeText}</span>
+            </div>
+            <div class="order-list">
+              ${itemsHtml}
+            </div>
           </div>
-          <div class="order-list">
-            ${itemsHtml}
+          <div>
+            ${hasPending ? `<div class="pending-alert">※ 未提供の品が ${pendingOrders.length} 件あります</div>` : ''}
+            <div class="total-price-box">
+              合計: ${totalPrice.toLocaleString()} 円
+            </div>
+            ${activeOrders.length > 0 ? `
+              <button 
+                class="btn-checkout" 
+                onclick="settleTable('${tableId}')" 
+                ${hasPending ? 'disabled title="すべての料理・ドリンクを提供完了にしてから会計してください"' : ''}>
+                ${hasPending ? '未提供品あり（会計不可）' : '会計完了処理'}
+              </button>
+            ` : ''}
           </div>
-          <div class="total-price-box">
-            合計: ${totalPrice.toLocaleString()} 円
-          </div>
-          ${validOrders.length > 0 ? `<button class="btn-checkout" onclick="settleTable('${tableId}')">会計完了処理</button>` : ''}
         `;
 
         grid.appendChild(card);
@@ -118,7 +169,8 @@
     }
 
     function settleTable(tableId) {
-      if (!confirm(`【${tableId}番卓】の会計を完了にし、卓を空けますか？`)) return;
+      const displayName = formatTableName(tableId);
+      if (!confirm(`【${displayName}】の会計を完了にし、卓を空けますか？`)) return;
 
       const params = new URLSearchParams();
       params.append('action', 'update_status');
@@ -134,7 +186,7 @@
       .then(res => res.json())
       .then(res => {
         if (res.status === 'success') {
-          alert(`【${tableId}番卓】の会計処理が完了しました。`);
+          alert(`【${displayName}】の会計処理が完了しました。`);
           loadCashierData();
         } else {
           alert("エラー: " + res.message);
