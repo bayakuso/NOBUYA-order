@@ -16,7 +16,10 @@ async function renderHistory() {
 
   if (!container) return;
 
-  const tableId = typeof AppState !== 'undefined' ? AppState.getTableId() : (new URLSearchParams(window.location.search)).get('table');
+  // URLまたはAppStateから卓番号（1, 2, T1等）を取得
+  const params = new URLSearchParams(window.location.search);
+  const tableId = params.get('table') || (typeof AppState !== 'undefined' ? AppState.getTableId() : '1');
+
   if (!tableId) {
     container.innerHTML = '<p style="text-align:center; color:#666; padding:20px;">卓番号が設定されていません。</p>';
     return;
@@ -25,13 +28,35 @@ async function renderHistory() {
   container.innerHTML = '<p style="text-align:center; color:#666; padding:20px;">履歴を読み込み中...</p>';
 
   try {
-    const orders = await API.getOrders(tableId);
-
-    if (!Array.isArray(orders)) {
-      throw new Error(`データ形式が配列ではありません (取得結果: ${JSON.stringify(orders)})`);
+    // CONFIG.GAS_URL を使用して直接GASからキッチン/履歴データを取得
+    const gasUrl = (typeof CONFIG !== 'undefined' && CONFIG.GAS_URL) ? CONFIG.GAS_URL : '';
+    if (!gasUrl) {
+      throw new Error('CONFIG.GAS_URL が設定されていません。');
     }
 
-    const validOrders = orders.filter(o => o.status !== 'キャンセル');
+    const res = await fetch(`${gasUrl}?mode=kitchen&action=history`);
+    const data = await res.json();
+    const allOrders = data.orders || [];
+
+    // 該当する卓の注文のみ抽出（大文字小文字を許容）
+    const tableOrders = allOrders.filter(o => 
+      String(o.tableId).trim().toUpperCase() === String(tableId).trim().toUpperCase()
+    );
+
+    // 直近の会計完了インデックスを特定
+    let lastCheckoutIndex = -1;
+    tableOrders.forEach(o => {
+      if (o.status === '会計済') {
+        const idx = parseInt(o.rowIndex, 10);
+        if (idx > lastCheckoutIndex) lastCheckoutIndex = idx;
+      }
+    });
+
+    // 会計済より後のアクティブな注文のみ抽出
+    const activeOrders = tableOrders.filter(o => parseInt(o.rowIndex, 10) > lastCheckoutIndex);
+
+    // キャンセル分を除外
+    const validOrders = activeOrders.filter(o => o.status !== 'キャンセル' && o.status !== '会計要請');
 
     if (validOrders.length === 0) {
       container.innerHTML = '<p style="text-align:center; color:#aaa; padding:30px 0;">ご注文履歴はありません。</p>';
@@ -48,18 +73,18 @@ async function renderHistory() {
       const qty = Number(order.quantity) || 1;
       const subtotal = price * qty;
 
-      if (order.status !== '会計要請') {
+      if (order.status === '提供済' || order.status === '受付' || order.status === '調理中') {
         cumulativeTotal += subtotal;
       }
 
-      let statusColor = '#ff9800';
+      let statusColor = '#ff9800'; // 受付/調理中
       if (order.status === '提供済') statusColor = '#4caf50';
       if (order.status === '会計済') statusColor = '#9e9e9e';
 
       html += `
         <div style="background:#fff; border:1px solid #eee; border-radius:6px; padding:10px; margin-bottom:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <span style="font-weight:bold; font-size:1rem;">${order.menuName || order.name} × ${qty}</span>
+            <span style="font-weight:bold; font-size:1rem;">${order.menuName || order.name || '商品'} × ${qty}</span>
             <span style="background:${statusColor}; color:#fff; font-size:0.75rem; padding:2px 6px; border-radius:4px; font-weight:bold;">${order.status}</span>
           </div>
           <div style="display:flex; justify-content:space-between; color:#666; font-size:0.85rem;">
@@ -78,11 +103,11 @@ async function renderHistory() {
 
   } catch (error) {
     console.error('履歴取得エラー:', error);
-    // エラーの具体的内容を画面にそのまま表示
-    container.innerHTML = `<div style="text-align:left; color:#d32f2f; padding:15px; background:#ffebee; border-radius:6px; font-size:0.85rem; word-break:break-all;">
-      <strong>【取得エラー詳細】</strong><br>
-      ${error.message || error}<br><br>
-      ※卓番号: ${tableId}
-    </div>`;
+    container.innerHTML = `
+      <div style="text-align:left; color:#d32f2f; padding:15px; background:#ffebee; border-radius:6px; font-size:0.85rem; word-break:break-all;">
+        <strong>【取得エラー詳細】</strong><br>
+        ${error.message || error}
+      </div>
+    `;
   }
 }
