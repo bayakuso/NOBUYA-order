@@ -157,5 +157,17 @@
   <script src="js/history.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/app.js"></script>
+  <script>
+    window.onerror = function(msg, url, line) {
+      alert("エラー発生:\n" + msg + "\n\nファイル: " + url + "\n行数: " + line);
+    };
+
+    // 読み込み確認
+    setTimeout(() => {
+      if (typeof openHistoryModal !== 'function') {
+        alert("警告: openHistoryModal 関数が読み込まれていません。\njs/history.js のファイル名やパスを確認してください。");
+      }
+    }, 1000);
+  </script>
 </body>
 </html>
