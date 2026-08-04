@@ -42,7 +42,7 @@ async function renderHistory() {
       String(o.tableId).trim().toUpperCase() === String(tableId).trim().toUpperCase()
     );
 
-    // 直近の「会計済」がある場合、それより後の注文のみを表示（同一テーブルの旧会計分をカット）
+    // 直近の「会計済」がある場合、それより後の注文のみを表示
     let lastCheckoutIndex = -1;
     tableOrders.forEach(o => {
       if (o.status === '会計済') {
@@ -53,7 +53,7 @@ async function renderHistory() {
 
     const activeOrders = tableOrders.filter(o => parseInt(o.rowIndex, 10) > lastCheckoutIndex);
 
-    // キャンセルされた注文のみ除外（「受付」「調理中」「提供済」「会計要請」はすべて表示）
+    // キャンセルされた注文のみ除外
     const validOrders = activeOrders.filter(o => o.status !== 'キャンセル');
 
     if (validOrders.length === 0) {
@@ -63,6 +63,9 @@ async function renderHistory() {
       return;
     }
 
+    // 調理中または受付の注文があるか判定
+    const hasUnfinishedOrders = validOrders.some(o => o.status === '調理中' || o.status === '受付');
+
     let cumulativeTotal = 0;
     let html = '';
 
@@ -71,7 +74,6 @@ async function renderHistory() {
       const qty = Number(order.quantity) || 1;
       const subtotal = price * qty;
 
-      // キャンセル以外のすべての注文金額を小計・合計に反映
       cumulativeTotal += subtotal;
 
       // ステータスごとのバッジカラーを設定
@@ -98,10 +100,28 @@ async function renderHistory() {
 
     container.innerHTML = html;
 
-    // 合計金額と会計ボタンの表示
+    // 合計金額の更新
     if (totalEl) totalEl.textContent = `${cumulativeTotal.toLocaleString()} 円`;
     if (bannerArea) bannerArea.style.display = 'block';
-    if (checkoutBtn) checkoutBtn.style.display = 'block';
+
+    // 会計ボタンの制御
+    if (checkoutBtn) {
+      checkoutBtn.style.display = 'block';
+
+      if (hasUnfinishedOrders) {
+        // 調理中・受付がある場合は無効化
+        checkoutBtn.disabled = true;
+        checkoutBtn.style.backgroundColor = '#ccc';
+        checkoutBtn.style.cursor = 'not-allowed';
+        checkoutBtn.innerText = '調理中のお品物があるため会計できません';
+      } else {
+        // すべて提供済みの場合は有効化
+        checkoutBtn.disabled = false;
+        checkoutBtn.style.backgroundColor = '#d32f2f'; // 元のボタン色（赤系）
+        checkoutBtn.style.cursor = 'pointer';
+        checkoutBtn.innerText = 'お会計に進む';
+      }
+    }
 
   } catch (error) {
     console.error('履歴取得エラー:', error);
