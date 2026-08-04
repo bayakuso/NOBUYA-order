@@ -10,40 +10,132 @@ async function openHistoryModal() {
 
 async function renderHistory() {
   const container = document.getElementById('history-list-items');
+  const bannerArea = document.getElementById('history-total-banner-area');
+  const totalEl = document.getElementById('history-cumulative-total');
+  const checkoutBtn = document.getElementById('checkout-action-btn');
+
   if (!container) return;
 
   const params = new URLSearchParams(window.location.search);
   const tableId = params.get('table') || (typeof AppState !== 'undefined' ? AppState.getTableId() : '1');
 
-  container.innerHTML = '<p style="text-align:center; padding:20px;">GAS通信中...</p>';
+  if (!tableId) {
+    container.innerHTML = '<p style="text-align:center; color:#666; padding:20px;">卓番号が設定されていません。</p>';
+    return;
+  }
+
+  container.innerHTML = '<p style="text-align:center; color:#666; padding:20px;">履歴を読み込み中...</p>';
 
   try {
     const gasUrl = (typeof CONFIG !== 'undefined' && CONFIG.GAS_URL) ? CONFIG.GAS_URL : '';
     if (!gasUrl) {
-      container.innerHTML = '<p style="color:red; padding:20px;">CONFIG.GAS_URL が未設定です。</p>';
-      return;
+      throw new Error('CONFIG.GAS_URL が設定されていません。');
     }
 
     const res = await fetch(`${gasUrl}?mode=kitchen&action=history`);
-    const textData = await res.text(); // 生のレスポンス文字列を取得
+    const data = await res.json();
+    
+    // orders がない場合は空配列として扱う
+    const allOrders = data.orders || [];
 
-    let parsedJson = null;
-    try {
-      parsedJson = JSON.parse(textData);
-    } catch (e) {
-      // JSONでない場合（HTMLエラー画面等）
+    // 該当する卓の注文を抽出
+    const tableOrders = allOrders.filter(o => {
+      const targetTable = o.tableId || o.table || '';
+      return String(targetTable).trim().toUpperCase() === String(tableId).trim().toUpperCase();
+    });
+
+    // 直近の会計済インデックスを特定
+    let lastCheckoutIndex = -1;
+    tableOrders.forEach(o => {
+      const st = String(o.status || '').trim();
+      if (st === '会計済') {
+        const idx = parseInt(o.rowIndex || o.id || 0, 10);
+        if (idx > lastCheckoutIndex) lastCheckoutIndex = idx;
+      }
+    });
+
+    // 直近会計より後の有効な注文
+    const activeOrders = tableOrders.filter(o => {
+      const idx = parseInt(o.rowIndex || o.id || 0, 10);
+      return idx > lastCheckoutIndex;
+    });
+
+    // キャンセル除外
+    const validOrders = activeOrders.filter(o => {
+      const st = String(o.status || '').trim();
+      return st !== 'キャンセル' && st !== '削除';
+    });
+
+    if (validOrders.length === 0) {
+      container.innerHTML = '<p style="text-align:center; color:#aaa; padding:30px 0;">ご注文履歴はありません。</p>';
+      if (bannerArea) bannerArea.style.display = 'none';
+      if (checkoutBtn) checkoutBtn.style.display = 'none';
+      return;
     }
 
-    // レスポンス内容をそのまま画面に表示
-    container.innerHTML = `
-      <div style="text-align:left; font-family:monospace; font-size:0.75rem; background:#1e1e1e; color:#00ff00; padding:10px; border-radius:4px; overflow-x:auto; word-break:break-all;">
-        <strong>【卓番号】:</strong> ${tableId}<br>
-        <strong>【GASレスポンス (Raw Text)】:</strong><br>
-        <pre style="white-space:pre-wrap; margin:5px 0; color:#fff;">${textData.substring(0, 1000)}</pre>
-      </div>
-    `;
+    // 未提供（調理中・受付等）のチェック
+    const hasUnfinishedOrders = validOrders.some(o => {
+      const st = String(o.status || '').trim();
+      return st === '調理中' || st === '受付' || st === '未提供' || st === '';
+    });
+
+    let cumulativeTotal = 0;
+    let html = '';
+
+    validOrders.forEach(order => {
+      const price = Number(order.price || 0);
+      const qty = Number(order.quantity || order.qty || 1);
+      const subtotal = price * qty;
+
+      cumulativeTotal += subtotal;
+
+      const rawStatus = String(order.status || '受付').trim();
+
+      let statusColor = '#ff9800'; // 受付/調理中
+      if (rawStatus.includes('提供') || rawStatus === '完了') {
+        statusColor = '#4caf50'; // 提供済
+      } else if (rawStatus.includes('会計要請')) {
+        statusColor = '#e91e63';
+      }
+
+      const menuName = order.menuName || order.name || 'ご注文商品';
+
+      html += `
+        <div style="background:#fff; border:1px solid #eee; border-radius:6px; padding:10px; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-weight:bold; font-size:1rem;">${menuName} × ${qty}</span>
+            <span style="background:${statusColor}; color:#fff; font-size:0.75rem; padding:2px 6px; border-radius:4px; font-weight:bold;">${rawStatus}</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; color:#666; font-size:0.85rem;">
+            <span>${order.time || ''}</span>
+            <span style="font-weight:bold; color:#333;">${subtotal.toLocaleString()} 円</span>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+
+    if (totalEl) totalEl.textContent = `${cumulativeTotal.toLocaleString()} 円`;
+    if (bannerArea) bannerArea.style.display = 'block';
+
+    if (checkoutBtn) {
+      checkoutBtn.style.display = 'block';
+
+      if (hasUnfinishedOrders) {
+        checkoutBtn.disabled = true;
+        checkoutBtn.style.backgroundColor = '#ccc';
+        checkoutBtn.style.cursor = 'not-allowed';
+        checkoutBtn.innerText = '調理中のお品物があるため会計できません';
+      } else {
+        checkoutBtn.disabled = false;
+        checkoutBtn.style.backgroundColor = '#d32f2f';
+        checkoutBtn.style.cursor = 'pointer';
+        checkoutBtn.innerText = 'お会計に進む';
+      }
+    }
 
   } catch (error) {
-    container.innerHTML = `<div style="color:red; padding:10px;">通信エラー: ${error.message}</div>`;
+    container.innerHTML = `<div style="color:red; padding:10px;">エラー: ${error.message}</div>`;
   }
 }
