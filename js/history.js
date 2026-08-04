@@ -1,80 +1,66 @@
-// ======================================
-// 注文履歴 logic
-// ======================================
+// js/history.js
 
-// 履歴モーダルを表示し、注文データを読み込む
-async function openHistoryModal() {
-  const container = document.getElementById('history-list-items');
-  const bannerArea = document.getElementById('history-total-banner-area');
-  const totalDisplay = document.getElementById('history-cumulative-total');
-  const checkoutBtn = document.getElementById('checkout-action-btn');
+async function renderHistory() {
+  const container = document.getElementById('history-list');
+  if (!container) return;
 
-  container.innerHTML = '<p style="text-align:center; color:#888; padding:15px 0;">最新状態を取得中...</p>';
-  bannerArea.style.display = 'none';
-  checkoutBtn.style.display = 'none';
-  document.getElementById('history-modal').style.display = 'flex';
+  const tableId = AppState.getTableId();
+  if (!tableId) {
+    container.innerHTML = '<p class="empty-msg">卓番号が設定されていません。</p>';
+    return;
+  }
+
+  container.innerHTML = '<p class="loading-msg">履歴を読み込み中...</p>';
 
   try {
-    const data = await apiFetchHistory(tableId);
-    let currentTableOrders = (data.orders || []).filter(o => String(o.tableId).trim() === String(tableId).trim() && parseInt(o.rowIndex, 10) > lastCheckoutRowIndex);
-    container.innerHTML = '';
-    if (currentTableOrders.length === 0) {
-      container.innerHTML = '<p style="text-align:center; color:#888; padding:15px 0;">注文履歴はありません。</p>';
+    const orders = await API.getOrders(tableId);
+    
+    // キャンセル以外の注文を表示対象とする
+    const activeOrders = orders.filter(order => order.status !== 'キャンセル');
+
+    if (activeOrders.length === 0) {
+      container.innerHTML = '<p class="empty-msg">注文履歴はありません。</p>';
       return;
     }
-    let cumulativeTotal = 0;
-    checkoutBtn.style.display = 'block';
 
-    currentTableOrders.reverse().forEach((item) => {
-      const row = document.createElement('div');
-      row.className = 'cart-item-row';
-      const cleanName = item.menuName.replace(/<br\s*\/?>/gi, '').replace(/\n/g, '').trim();
-      const matchedMenu = state.allMenus.find(m => cleanName.startsWith(m.name.trim()));
-      let fallbackUnitPrice = matchedMenu ? Number(matchedMenu.price) : 0;
-      let parsedPrice = Number(item.price) || 0;
-      const itemQty = Number(item.quantity) || 0;
-      const currentStatus = String(item.status).trim();
-      let statusLabel = '';
-
-      if (currentStatus.includes('取消') || currentStatus.includes('キャンセル')) {
-        statusLabel = '<span style="color: #d32f2f; font-weight: bold; background: #ffebee; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem;">キャンセル</span>';
-      } else {
-        const unitPrice = (parsedPrice > 0) ? parsedPrice : fallbackUnitPrice;
-        cumulativeTotal += (unitPrice * itemQty);
-        if (currentStatus.includes('提供')) statusLabel = '<span style="color: #4caf50; font-weight: bold; background: #e8f5e9; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem;">提供済</span>';
-        else statusLabel = '<span style="color: #ff9800; font-weight: bold; background: #fff3e0; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem;">調理中</span>';
-      }
-
-      const formattedTime = extractHHMM(item.time);
-
-      row.innerHTML = `<div class="cart-item-info"><div class="cart-item-name">${cleanName}</div><div class="cart-item-price-label" style="margin-top:3px;">${statusLabel} <span style="color:#999; margin-left:5px;">${formattedTime}</span></div></div><div style="font-weight: bold; color: #333;">${itemQty} 点</div>`;
-      container.appendChild(row);
+    let html = '';
+    activeOrders.forEach(order => {
+      const statusClass = getStatusClass(order.status);
+      html += `
+        <div class="history-card">
+          <div class="history-header">
+            <span class="order-time">${order.timestamp || ''}</span>
+            <span class="status-badge ${statusClass}">${order.status}</span>
+          </div>
+          <div class="history-items">
+            ${order.items.map(item => `
+              <div class="history-item">
+                <span class="item-name">${item.name}</span>
+                <span class="item-qty">x${item.quantity}</span>
+                <span class="item-price">¥${(item.price * item.quantity).toLocaleString()}</span>
+              </div>
+            `).join('')}
+          </div>
+          <div class="history-total">
+            小計: <strong>¥${order.totalAmount.toLocaleString()}</strong>
+          </div>
+        </div>
+      `;
     });
-    totalDisplay.innerText = `${cumulativeTotal.toLocaleString()} 円`;
-    bannerArea.style.display = 'block';
-  } catch (e) {
-    container.innerHTML = '<p style="text-align:center; color:red; padding:15px 0;">履歴取得失敗。</p>';
+
+    container.innerHTML = html;
+  } catch (error) {
+    console.error('履歴取得エラー:', error);
+    container.innerHTML = '<p class="error-msg">履歴の取得に失敗しました。</p>';
   }
 }
 
-// 会計要請の送信処理
-async function requestCheckout() {
-  if (!confirm("お会計を要請しますか？\n※これ以上の追加注文はできなくなります。")) return;
-  const btn = document.getElementById('checkout-action-btn');
-  btn.disabled = true;
-  btn.innerText = "処理中...";
-  try {
-    const result = await apiRequestCheckout(tableId);
-    if (result.status === 'success') {
-      closeModal('history-modal');
-      document.getElementById('checkout-lock-overlay').style.display = 'flex';
-    } else {
-      alert("会計処理エラー: " + result.message);
-    }
-  } catch (err) {
-    alert("通信に失敗しました。ネットワーク環境をご確認ください。");
-  } finally {
-    btn.disabled = false;
-    btn.innerText = "お会計に進む";
+function getStatusClass(status) {
+  switch (status) {
+    case '受付': return 'status-received';
+    case '調理中': return 'status-cooking';
+    case '提供済': return 'status-served';
+    case '会計済': return 'status-paid';
+    default: return '';
   }
 }
