@@ -157,17 +157,22 @@
   <script src="js/history.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/app.js"></script>
+  <!-- デバッグ用エラー表示スクリプト（詳細版） -->
   <script>
-    window.onerror = function(msg, url, line) {
-      alert("エラー発生:\n" + msg + "\n\nファイル: " + url + "\n行数: " + line);
+    // JavaScript実行エラーを捕捉
+    window.onerror = function(msg, url, line, col, error) {
+      const file = url ? url.split('/').pop() : '不明';
+      alert("【エラー検知】\n内容: " + msg + "\nファイル: " + file + "\n行数: " + line + "行目");
+      return false;
     };
 
-    // 読み込み確認
-    setTimeout(() => {
-      if (typeof openHistoryModal !== 'function') {
-        alert("警告: openHistoryModal 関数が読み込まれていません。\njs/history.js のファイル名やパスを確認してください。");
-      }
-    }, 1000);
+    // 非同期処理（fetch等）のエラーを捕捉
+    window.addEventListener('unhandledrejection', function(event) {
+      alert("【通信/Promiseエラー】\n内容: " + event.reason);
+    });
   </script>
+</body>
+</html>
+
 </body>
 </html>
