@@ -139,3 +139,53 @@ async function renderHistory() {
     container.innerHTML = `<div style="color:red; padding:10px;">エラー: ${error.message}</div>`;
   }
 }
+
+// お会計リクエスト送信処理
+async function requestCheckout() {
+  if (!confirm("お会計を呼び出しますか？")) {
+    return;
+  }
+
+  // CONFIG.GAS_URL の取得
+  const targetUrl = (typeof CONFIG !== 'undefined' && CONFIG.GAS_URL) ? CONFIG.GAS_URL : '';
+  if (!targetUrl) {
+    alert("エラー: CONFIG.GAS_URL が設定されていません。");
+    return;
+  }
+
+  // 卓番号（tableId）の取得
+  const params = new URLSearchParams(window.location.search);
+  const tableId = params.get('table') || (typeof AppState !== 'undefined' ? AppState.getTableId() : '1');
+
+  try {
+    // 注文履歴モーダルを閉じる
+    if (typeof closeModal === 'function') {
+      closeModal('history-modal');
+    }
+
+    // 会計リクエスト送信 (action=checkout)
+    const response = await fetch(`${targetUrl}?action=checkout&tableId=${encodeURIComponent(tableId)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }
+    });
+
+    const result = await response.json();
+
+    if (result.status === "success") {
+      // index.html にあるロック画面を表示
+      const lockOverlay = document.getElementById('checkout-lock-overlay');
+      if (lockOverlay) {
+        lockOverlay.style.display = 'flex';
+      } else {
+        alert("お会計のリクエストを送信しました。伝票をお持ちの上、レジへお越しください。");
+      }
+    } else {
+      alert("エラーが発生しました: " + (result.message || "送信失敗"));
+    }
+  } catch (error) {
+    console.error("Checkout Error:", error);
+    alert("通信エラーが発生しました。");
+  }
+}
