@@ -204,6 +204,7 @@ window.onload = async () => {
 };
 
 // 卓のお会計要請・状態監視ループ
+// 卓のお会計要請・状態監視ループ
 setInterval(async function() {
   if (!initialOrdersChecked || isAppDisabled) return;
   try {
@@ -234,10 +235,6 @@ setInterval(async function() {
         forceLockExpiredSubDevice();
       }
     }
-  } catch (e) {
-    console.error("決済連携監視システムエラー:", e);
-  }
-}, CONFIG.REFRESH_INTERVAL);
   } catch (e) {
     console.error("決済連携監視システムエラー:", e);
   }
