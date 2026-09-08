@@ -58,29 +58,46 @@ function forceLockExpiredSubDevice() {
   const lockOverlay = document.getElementById('checkout-lock-overlay');
   if (lockOverlay) {
     lockOverlay.style.display = 'flex';
-    document.getElementById('lock-icon').innerText = "🛑";
-    document.getElementById('lock-title').innerText = "ご利用ありがとうございました";
-    document.getElementById('lock-title').style.color = "#d32f2f";
-    document.getElementById('lock-body').innerHTML = "お会計が完了したため、このQRコードは無効化されました。<br>再度ご注文される場合は、卓上端末の新しいQRコードをもう一度読み取ってください。";
-    document.getElementById('lock-spinner').style.display = "none";
+    const iconEl = document.getElementById('lock-icon');
+    const titleEl = document.getElementById('lock-title');
+    const bodyEl = document.getElementById('lock-body');
+    const spinnerEl = document.getElementById('lock-spinner');
+    
+    if (iconEl) iconEl.innerText = "🛑";
+    if (titleEl) {
+      titleEl.innerText = "ご利用ありがとうございました";
+      titleEl.style.color = "#d32f2f";
+    }
+    if (bodyEl) {
+      bodyEl.innerHTML = "お会計が完了したため、このQRコードは無効化されました。<br>再度ご注文される場合は、卓上端末の新しいQRコードをもう一度読み取ってください。";
+    }
+    if (spinnerEl) spinnerEl.style.display = "none";
   }
 }
 
-// ヘッダー情報ステータスバッジ更新
+// ヘッダー情報ステータスバッジ更新（安全化版）
 function updateHeaderStatusBadges() {
+  if (typeof urlParams === 'undefined') return;
+
   const num = urlParams.get('num');
   const time = urlParams.get('time');
-  if (num) {
-    document.getElementById('display-guest-count').innerText = num;
-    document.getElementById('display-guest-badge').style.display = 'inline-block';
-  } else {
-    document.getElementById('display-guest-badge').style.display = 'none';
+
+  const guestBadge = document.getElementById('display-guest-badge');
+  const guestCountEl = document.getElementById('display-guest-count');
+  if (num && guestBadge && guestCountEl) {
+    guestCountEl.innerText = num;
+    guestBadge.style.display = 'inline-block';
+  } else if (guestBadge) {
+    guestBadge.style.display = 'none';
   }
-  if (time) { 
-    document.getElementById('display-start-time').innerText = extractHHMM(decodeURIComponent(time)); 
-    document.getElementById('display-time-badge').style.display = 'inline-block'; 
-  } else { 
-    document.getElementById('display-time-badge').style.display = 'none'; 
+
+  const timeBadge = document.getElementById('display-time-badge');
+  const startTimeEl = document.getElementById('display-start-time');
+  if (time && timeBadge && startTimeEl) { 
+    startTimeEl.innerText = extractHHMM(decodeURIComponent(time)); 
+    timeBadge.style.display = 'inline-block'; 
+  } else if (timeBadge) { 
+    timeBadge.style.display = 'none'; 
   }
 }
 
@@ -119,48 +136,87 @@ function handleSwipeGesture() {
   const deltaX = (window.touchEndX || 0) - (window.touchStartX || 0);
   const deltaY = (window.touchEndY || 0) - (window.touchStartY || 0);
   if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 60) {
-    const currentIndex = state.categories.indexOf(state.currentCategory);
-    if (deltaX < 0 && currentIndex < state.categories.length - 1) switchCategory(state.categories[currentIndex + 1]);
-    else if (deltaX > 0 && currentIndex > 0) switchCategory(state.categories[currentIndex - 1]);
+    if (typeof state !== 'undefined' && state.categories) {
+      const currentIndex = state.categories.indexOf(state.currentCategory);
+      if (deltaX < 0 && currentIndex < state.categories.length - 1) switchCategory(state.categories[currentIndex + 1]);
+      else if (deltaX > 0 && currentIndex > 0) switchCategory(state.categories[currentIndex - 1]);
+    }
   }
 }
 
 // 来店人数入力確定モーダル処理
 function submitModalQty() {
-  const guestCount = document.getElementById('modal-guest-count').value;
+  const countEl = document.getElementById('modal-guest-count');
+  const guestCount = countEl ? countEl.value : "1";
   const now = new Date(); 
   const timeStr = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
   
-  urlParams.set('num', guestCount); 
-  urlParams.set('time', timeStr);
+  if (typeof urlParams !== 'undefined') {
+    urlParams.set('num', guestCount); 
+    urlParams.set('time', timeStr);
+    window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
+  }
   
-  window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
   updateHeaderStatusBadges();
+  if (typeof closeModal === 'function') closeModal('customer-modal');
+}
+
+// フルスクリーン化・アドレスバー非表示要求（ボタン押下等の操作時のみ呼び出し）
+function triggerMobileFullscreen() {
+  if (document.fullscreenElement) return;
+
+  const docEl = document.documentElement;
+  try {
+    if (docEl.requestFullscreen) {
+      docEl.requestFullscreen().catch(() => {});
+    } else if (docEl.webkitRequestFullscreen) {
+      docEl.webkitRequestFullscreen();
+    } else if (docEl.mozRequestFullScreen) {
+      docEl.mozRequestFullScreen();
+    }
+  } catch (err) {
+    // 画面操作外でのエラーを無視
+  }
   
-  closeModal('customer-modal');
+  setTimeout(() => { window.scrollTo(0, 1); }, 100);
 }
 
 // 全体初期化エントリーポイント
 window.onload = async () => {
-  document.getElementById('display-table-id').innerText = tableId;
-  
-  if (isViewer) {
-    document.getElementById('header-link-area').style.display = 'block';
-    document.getElementById('customer-modal').style.display = 'flex'; 
+  try {
+    const tableEl = document.getElementById('display-table-id');
+    if (tableEl && typeof tableId !== 'undefined') {
+      tableEl.innerText = tableId;
+    }
+    
+    if (typeof isViewer !== 'undefined' && isViewer) {
+      const linkArea = document.getElementById('header-link-area');
+      const custModal = document.getElementById('customer-modal');
+      if (linkArea) linkArea.style.display = 'block';
+      if (custModal) custModal.style.display = 'flex'; 
+    } else {
+      const linkArea = document.getElementById('header-link-area');
+      if (linkArea) linkArea.style.display = 'none';
+    }
+    
+    updateHeaderStatusBadges();
+    await initCheckoutIndex();
+
+    if (typeof isViewer !== 'undefined' && !isViewer && initialOrdersChecked && isAppDisabled) {
+      forceLockExpiredSubDevice();
+      return; 
+    }
+  } catch (err) {
+    console.error("初期化処理の一部で例外が発生しましたが、メニュー読み込みを続行します:", err);
+  }
+
+  // エラー発生有無に関わらず確実にメニューを取得する
+  if (typeof fetchMenus === 'function') {
+    fetchMenus();
   } else {
-    document.getElementById('header-link-area').style.display = 'none';
-  }
-  
-  updateHeaderStatusBadges();
-  
-  await initCheckoutIndex();
-
-  if (!isViewer && initialOrdersChecked && isAppDisabled) {
-    forceLockExpiredSubDevice();
-    return; 
+    console.error("fetchMenus 関数が見つかりません。スクリプトの読み込み順を確認してください。");
   }
 
-  if (typeof fetchMenus === 'function') fetchMenus();
   if (typeof updateCartBadge === 'function') updateCartBadge();
   setupSwipeEvents();
 };
@@ -188,7 +244,7 @@ setInterval(async function() {
       return;
     }
     if (isCurrentlyLocked && (!hasCheckoutRequested || hasCheckoutSettled)) {
-      state.cart = [];
+      if (typeof state !== 'undefined') state.cart = [];
       if (typeof updateCartBadge === 'function') updateCartBadge();
       if (isViewer) {
         if (lockOverlay) lockOverlay.style.display = 'none';
