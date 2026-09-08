@@ -138,20 +138,18 @@ function submitModalQty() {
   const timeStr = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
   
   urlParams.set('num', guestCount); 
-  // URLSearchParams は自動でエンコードするため、そのまま渡す（二重エンコード防止）
   urlParams.set('time', timeStr);
   
   window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
   updateHeaderStatusBadges();
   
-  // ユーザーのボタンタップ直後なので安全に全画面化可能
   triggerMobileFullscreen();
   closeModal('customer-modal');
 }
 
-// フルスクリーン化・アドレスバー非表示要求（安全化）
+// フルスクリーン化・アドレスバー非表示要求
 function triggerMobileFullscreen() {
-  if (document.fullscreenElement) return; // 既に全画面の場合は何もしない
+  if (document.fullscreenElement) return;
 
   const docEl = document.documentElement;
   try {
@@ -163,7 +161,7 @@ function triggerMobileFullscreen() {
       docEl.mozRequestFullScreen();
     }
   } catch (err) {
-    // ユーザー操作外の呼び出しによるエラーを黙って無視する
+    // 画面操作外でのエラーを無視
   }
   
   setTimeout(() => { window.scrollTo(0, 1); }, 100);
@@ -193,7 +191,6 @@ window.onload = async () => {
   updateCartBadge();
   setupSwipeEvents();
 
-  // 画面の初回タップ/クリック時に安全に全画面化を試みる
   const enableFirstFullscreen = () => {
     triggerMobileFullscreen();
     window.removeEventListener('click', enableFirstFullscreen);
@@ -203,7 +200,6 @@ window.onload = async () => {
   window.addEventListener('touchstart', enableFirstFullscreen, { once: true });
 };
 
-// 卓のお会計要請・状態監視ループ
 // 卓のお会計要請・状態監視ループ
 setInterval(async function() {
   if (!initialOrdersChecked || isAppDisabled) return;
