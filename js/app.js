@@ -75,7 +75,7 @@ function forceLockExpiredSubDevice() {
   }
 }
 
-// ヘッダー情報ステータスバッジ更新（安全化版）
+// ヘッダー情報ステータスバッジ更新
 function updateHeaderStatusBadges() {
   if (typeof urlParams === 'undefined') return;
 
@@ -161,7 +161,7 @@ function submitModalQty() {
   if (typeof closeModal === 'function') closeModal('customer-modal');
 }
 
-// フルスクリーン化・アドレスバー非表示要求（ボタン押下等の操作時のみ呼び出し）
+// フルスクリーン化要求
 function triggerMobileFullscreen() {
   if (document.fullscreenElement) return;
 
@@ -175,7 +175,7 @@ function triggerMobileFullscreen() {
       docEl.mozRequestFullScreen();
     }
   } catch (err) {
-    // 画面操作外でのエラーを無視
+    // エラー無視
   }
   
   setTimeout(() => { window.scrollTo(0, 1); }, 100);
@@ -183,31 +183,53 @@ function triggerMobileFullscreen() {
 
 // 全体初期化エントリーポイント
 window.onload = async () => {
-  // エラー発生有無に関わらず確実にメニューを取得する
   try {
-    if (typeof apiFetchMenus === 'function') {
-      const menus = await apiFetchMenus();
-      if (menus && menus.length > 0) {
-        // もし UI 描画用の関数 (例: renderMenuList や renderCategory) がある場合はここで呼ぶ
-        if (typeof renderMenuList === 'function') {
-          renderMenuList(menus);
-        } else if (typeof renderCategory === 'function') {
-          renderCategory(menus);
-        } else if (typeof state !== 'undefined') {
-          state.menus = menus;
-          if (typeof renderMenu === 'function') renderMenu();
-        }
-      } else {
-        console.warn("取得したメニューデータが空です");
-      }
-    } else if (typeof fetchMenus === 'function') {
-      fetchMenus();
-    } else {
-      console.error("apiFetchMenus または fetchMenus 関数が見つかりません。");
+    const tableEl = document.getElementById('display-table-id');
+    if (tableEl && typeof tableId !== 'undefined') {
+      tableEl.innerText = tableId;
     }
-  } catch (menuErr) {
-    console.error("メニュー取得処理中にエラーが発生しました:", menuErr);
+    
+    if (typeof isViewer !== 'undefined' && isViewer) {
+      const linkArea = document.getElementById('header-link-area');
+      const custModal = document.getElementById('customer-modal');
+      if (linkArea) linkArea.style.display = 'block';
+      if (custModal) custModal.style.display = 'flex'; 
+    } else {
+      const linkArea = document.getElementById('header-link-area');
+      if (linkArea) linkArea.style.display = 'none';
+    }
+    
+    updateHeaderStatusBadges();
+    await initCheckoutIndex();
+
+    if (typeof isViewer !== 'undefined' && !isViewer && initialOrdersChecked && isAppDisabled) {
+      forceLockExpiredSubDevice();
+      return; 
+    }
+  } catch (err) {
+    console.error("初期化処理の一部で例外が発生しましたが、メニュー読み込みを続行します:", err);
   }
+
+  // メニュー読み込み処理
+  if (typeof fetchMenus === 'function') {
+    fetchMenus();
+  } else if (typeof apiFetchMenus === 'function') {
+    try {
+      const menus = await apiFetchMenus();
+      if (typeof renderMenu === 'function') {
+        renderMenu(menus);
+      } else if (typeof state !== 'undefined') {
+        state.menus = menus;
+        if (typeof renderCategory === 'function') renderCategory();
+      }
+    } catch(e) {
+      console.error("メニュー取得エラー:", e);
+    }
+  }
+
+  if (typeof updateCartBadge === 'function') updateCartBadge();
+  setupSwipeEvents();
+};
 
 // 卓のお会計要請・状態監視ループ
 setInterval(async function() {
