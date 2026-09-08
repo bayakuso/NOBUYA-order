@@ -73,10 +73,10 @@ async function renderHistory() {
       return;
     }
 
-    // 未提供（調理中・受付等）のチェック
+    // 未提供（「提供済」「提供」「完了」「会計済」以外のステータス）があるかチェック
     const hasUnfinishedOrders = validOrders.some(o => {
       const st = String(o.status || '').trim();
-      return st === '調理中' || st === '受付' || st === '未提供' || st === '';
+      return !(st.includes('提供') || st === '完了' || st === '会計済');
     });
 
     let cumulativeTotal = 0;
@@ -89,12 +89,16 @@ async function renderHistory() {
 
       cumulativeTotal += subtotal;
 
-      const rawStatus = String(order.status || '受付').trim();
+      const rawStatus = String(order.status || '').trim();
 
-      let statusColor = '#ff9800'; // 受付/調理中
+      let displayStatus = '調理中';
+      let statusColor = '#ff9800'; // オレンジ（調理中）
+
       if (rawStatus.includes('提供') || rawStatus === '完了') {
-        statusColor = '#4caf50'; // 提供済
-      } else if (rawStatus.includes('会計要請')) {
+        displayStatus = '提供済';
+        statusColor = '#4caf50'; // 緑（提供済）
+      } else if (rawStatus.includes('会計要請') || rawStatus === '会計済') {
+        displayStatus = rawStatus;
         statusColor = '#e91e63';
       }
 
@@ -104,7 +108,7 @@ async function renderHistory() {
         <div style="background:#fff; border:1px solid #eee; border-radius:6px; padding:10px; margin-bottom:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
             <span style="font-weight:bold; font-size:1rem;">${menuName} × ${qty}</span>
-            <span style="background:${statusColor}; color:#fff; font-size:0.75rem; padding:2px 6px; border-radius:4px; font-weight:bold;">${rawStatus}</span>
+            <span style="background:${statusColor}; color:#fff; font-size:0.75rem; padding:2px 6px; border-radius:4px; font-weight:bold;">${displayStatus}</span>
           </div>
           <div style="display:flex; justify-content:space-between; color:#666; font-size:0.85rem;">
             <span>${order.time || ''}</span>
