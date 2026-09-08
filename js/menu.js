@@ -6,8 +6,18 @@
 async function fetchMenus() {
   const listContainer = document.getElementById('menu-list');
   try {
-    const data = await apiFetchMenus();
-    
+    const rawData = await apiFetchMenus();
+    console.log("GAS取得データ:", rawData);
+
+    // レスポンスのデータ構造を判定・正規化（オブジェクトで返ってきた場合の吸収処理）
+    let data = rawData;
+    if (typeof rawData === 'string') {
+      try { data = JSON.parse(rawData); } catch(e) {}
+    }
+    if (rawData && !Array.isArray(rawData)) {
+      data = rawData.data || rawData.menus || rawData.items || [];
+    }
+
     if (!Array.isArray(data) || data.length === 0) {
       listContainer.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">メニューが登録されていません。</p>';
       return;
@@ -40,6 +50,7 @@ async function fetchMenus() {
 // カテゴリタブの構築
 function buildCategoryBar() {
   const bar = document.getElementById('category-bar');
+  if (!bar) return;
   bar.innerHTML = '';
   state.categories.forEach(cat => {
     const tab = document.createElement('div');
@@ -72,6 +83,7 @@ function scrollToActiveTab() {
 // メニューカード一覧の描画
 function renderMenuList() {
   const listContainer = document.getElementById('menu-list');
+  if (!listContainer) return;
   listContainer.innerHTML = '';
   const filtered = state.allMenus.filter(m => m.category === state.currentCategory);
   if (filtered.length === 0) {
