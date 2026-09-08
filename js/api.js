@@ -35,14 +35,18 @@ async function apiFetchHistory(tableId) {
 async function apiSendBulkOrder(tableId, cart) {
   const postUrl = `${CONFIG.GAS_URL}?action=bulk_order&tableId=${encodeURIComponent(tableId)}`;
   
+  // GASのOPTIONSプリフライト回避・確実に届くtext/plain形式でJSON文字列を送信
   const response = await fetch(postUrl, {
     method: 'POST',
     headers: {
-      'Content-Type': 'text/plain;charset=utf-8' // GASのCORSプリフライト(OPTIONS)回避のためtext/plainを推奨
+      'Content-Type': 'text/plain;charset=utf-8'
     },
     body: JSON.stringify({ cart: cart })
   });
   
+  if (!response.ok) {
+    throw new Error(`注文送信失敗: HTTP ${response.status}`);
+  }
   return await response.json();
 }
 
