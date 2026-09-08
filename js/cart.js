@@ -46,14 +46,14 @@ function updateCartBadge() {
   }
 }
 
-// カートモーダルの表示更新
+// カートモーダルの表示更新（2回目以降の注文時にもボタン表示を必ず初期化）
 function openCartModal() {
   const container = document.getElementById('cart-list-items');
   const btn = document.getElementById('send-order-btn');
   
   if (container) container.innerHTML = '';
   
-  // ボタン状態の初期化（前回の送信中テキスト等をリセット）
+  // ★重要：モーダルを開くたびにボタン表示をリセット
   if (btn) {
     btn.innerText = "注文を確定する";
   }
@@ -116,7 +116,7 @@ async function sendBulkOrder() {
       if (typeof showCustomToast === 'function') {
         showCustomToast(true, 'ご注文を承りました', '厨房へ伝票を送信しました。');
       }
-      // 送信成功時にカートを空にする
+      // 送信成功時にカートをクリア
       state.cart = [];
       updateCartBadge();
       
@@ -135,7 +135,7 @@ async function sendBulkOrder() {
       showCustomToast(false, '通信失敗', 'ネットワーク環境をご確認ください。');
     }
   } finally {
-    // 成功・失敗・例外発生を問わず、必ずボタンの表示と状態を元に戻す
+    // ★重要：成功・失敗・モーダル閉鎖を問わず、ボタンテキストを「注文を確定する」に戻す
     if (btn) {
       btn.innerText = "注文を確定する";
       btn.disabled = (state.cart.length === 0);
