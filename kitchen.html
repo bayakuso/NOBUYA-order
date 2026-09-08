@@ -90,17 +90,18 @@
     }
 
     function loadKitchenData() {
-      fetch(`${CONFIG.GAS_URL}?mode=kitchen`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.menus) {
-            allMenusCache = data.menus;
-            updateOralMenuSelect(data.menus);
-          }
-          renderOrders(data.orders || []);
-        })
-        .catch(err => console.error("データ取得エラー:", err));
-    }
+  // 末尾にタイムスタンプを付与してキャッシュを回避
+  fetch(`${CONFIG.GAS_URL}?mode=kitchen&_t=${Date.now()}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.menus) {
+        allMenusCache = data.menus;
+        updateOralMenuSelect(data.menus);
+      }
+      renderOrders(data.orders || []);
+    })
+    .catch(err => console.error("データ取得エラー:", err));
+}
 
     function updateOralMenuSelect(menus) {
       const select = document.getElementById('oral-menu');
