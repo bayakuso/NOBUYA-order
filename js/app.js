@@ -137,28 +137,7 @@ function submitModalQty() {
   window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
   updateHeaderStatusBadges();
   
-  triggerMobileFullscreen();
   closeModal('customer-modal');
-}
-
-// フルスクリーン化・アドレスバー非表示要求
-function triggerMobileFullscreen() {
-  if (document.fullscreenElement) return;
-
-  const docEl = document.documentElement;
-  try {
-    if (docEl.requestFullscreen) {
-      docEl.requestFullscreen().catch(() => {});
-    } else if (docEl.webkitRequestFullscreen) {
-      docEl.webkitRequestFullscreen();
-    } else if (docEl.mozRequestFullScreen) {
-      docEl.mozRequestFullScreen();
-    }
-  } catch (err) {
-    // 画面操作外でのエラーを無視
-  }
-  
-  setTimeout(() => { window.scrollTo(0, 1); }, 100);
 }
 
 // 全体初期化エントリーポイント
@@ -181,17 +160,9 @@ window.onload = async () => {
     return; 
   }
 
-  fetchMenus();
-  updateCartBadge();
+  if (typeof fetchMenus === 'function') fetchMenus();
+  if (typeof updateCartBadge === 'function') updateCartBadge();
   setupSwipeEvents();
-
-  const enableFirstFullscreen = () => {
-    triggerMobileFullscreen();
-    window.removeEventListener('click', enableFirstFullscreen);
-    window.removeEventListener('touchstart', enableFirstFullscreen);
-  };
-  window.addEventListener('click', enableFirstFullscreen, { once: true });
-  window.addEventListener('touchstart', enableFirstFullscreen, { once: true });
 };
 
 // 卓のお会計要請・状態監視ループ
@@ -209,14 +180,16 @@ setInterval(async function() {
     
     if (hasCheckoutRequested) {
       if (!isCurrentlyLocked && lockOverlay) {
-        ['cart-modal', 'history-modal', 'option-modal'].forEach(id => closeModal(id));
+        ['cart-modal', 'history-modal', 'option-modal'].forEach(id => {
+          if (typeof closeModal === 'function') closeModal(id);
+        });
         lockOverlay.style.display = 'flex';
       }
       return;
     }
     if (isCurrentlyLocked && (!hasCheckoutRequested || hasCheckoutSettled)) {
       state.cart = [];
-      updateCartBadge();
+      if (typeof updateCartBadge === 'function') updateCartBadge();
       if (isViewer) {
         if (lockOverlay) lockOverlay.style.display = 'none';
         window.location.href = window.location.origin + window.location.pathname + `?table=${encodeURIComponent(tableId)}&view=true`;
