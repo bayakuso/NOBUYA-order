@@ -210,21 +210,9 @@ window.onload = async () => {
     console.error("初期化処理の一部で例外が発生しましたが、メニュー読み込みを続行します:", err);
   }
 
-  // メニュー読み込み処理
+  // メニュー読み込み処理の実行
   if (typeof fetchMenus === 'function') {
     fetchMenus();
-  } else if (typeof apiFetchMenus === 'function') {
-    try {
-      const menus = await apiFetchMenus();
-      if (typeof renderMenu === 'function') {
-        renderMenu(menus);
-      } else if (typeof state !== 'undefined') {
-        state.menus = menus;
-        if (typeof renderCategory === 'function') renderCategory();
-      }
-    } catch(e) {
-      console.error("メニュー取得エラー:", e);
-    }
   }
 
   if (typeof updateCartBadge === 'function') updateCartBadge();
