@@ -183,43 +183,31 @@ function triggerMobileFullscreen() {
 
 // 全体初期化エントリーポイント
 window.onload = async () => {
-  try {
-    const tableEl = document.getElementById('display-table-id');
-    if (tableEl && typeof tableId !== 'undefined') {
-      tableEl.innerText = tableId;
-    }
-    
-    if (typeof isViewer !== 'undefined' && isViewer) {
-      const linkArea = document.getElementById('header-link-area');
-      const custModal = document.getElementById('customer-modal');
-      if (linkArea) linkArea.style.display = 'block';
-      if (custModal) custModal.style.display = 'flex'; 
-    } else {
-      const linkArea = document.getElementById('header-link-area');
-      if (linkArea) linkArea.style.display = 'none';
-    }
-    
-    updateHeaderStatusBadges();
-    await initCheckoutIndex();
-
-    if (typeof isViewer !== 'undefined' && !isViewer && initialOrdersChecked && isAppDisabled) {
-      forceLockExpiredSubDevice();
-      return; 
-    }
-  } catch (err) {
-    console.error("初期化処理の一部で例外が発生しましたが、メニュー読み込みを続行します:", err);
-  }
-
   // エラー発生有無に関わらず確実にメニューを取得する
-  if (typeof fetchMenus === 'function') {
-    fetchMenus();
-  } else {
-    console.error("fetchMenus 関数が見つかりません。スクリプトの読み込み順を確認してください。");
+  try {
+    if (typeof apiFetchMenus === 'function') {
+      const menus = await apiFetchMenus();
+      if (menus && menus.length > 0) {
+        // もし UI 描画用の関数 (例: renderMenuList や renderCategory) がある場合はここで呼ぶ
+        if (typeof renderMenuList === 'function') {
+          renderMenuList(menus);
+        } else if (typeof renderCategory === 'function') {
+          renderCategory(menus);
+        } else if (typeof state !== 'undefined') {
+          state.menus = menus;
+          if (typeof renderMenu === 'function') renderMenu();
+        }
+      } else {
+        console.warn("取得したメニューデータが空です");
+      }
+    } else if (typeof fetchMenus === 'function') {
+      fetchMenus();
+    } else {
+      console.error("apiFetchMenus または fetchMenus 関数が見つかりません。");
+    }
+  } catch (menuErr) {
+    console.error("メニュー取得処理中にエラーが発生しました:", menuErr);
   }
-
-  if (typeof updateCartBadge === 'function') updateCartBadge();
-  setupSwipeEvents();
-};
 
 // 卓のお会計要請・状態監視ループ
 setInterval(async function() {
