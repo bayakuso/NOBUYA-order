@@ -119,12 +119,18 @@
       const grid = document.getElementById('order-grid');
       grid.innerHTML = '';
 
-      if (orders.length === 0) {
+      // 提供済み・完了・キャンセル・会計済みの注文を除外（未対応・調理中・受付・会計要請のみ表示）
+      const activeOrders = orders.filter(order => {
+        const st = String(order.status || '').trim();
+        return !(st.includes('提供') || st === '完了' || st === 'キャンセル' || st === '削除' || st === '会計済');
+      });
+
+      if (activeOrders.length === 0) {
         grid.innerHTML = '<p style="color:#aaa; grid-column: 1/-1; text-align:center; padding: 40px 0;">現在、未対応の注文はありません。</p>';
         return;
       }
 
-      orders.forEach(order => {
+      activeOrders.forEach(order => {
         const card = document.createElement('div');
         const isCheckout = (order.status === '会計要請');
         card.className = `order-card ${isCheckout ? 'checkout-req' : ''}`;
@@ -211,6 +217,9 @@
       })
       .catch(err => alert("通信に失敗しました。"));
     }
+  </script>
+</body>
+</html>
   </script>
 </body>
 </html>
