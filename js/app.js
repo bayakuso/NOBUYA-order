@@ -2,12 +2,6 @@
 // アプリ初期化・全体イベント制御 (Main App Entry)
 // ======================================
 
-// タッチ座標保持用変数
-let touchStartX = 0;
-let touchStartY = 0;
-let touchEndX = 0;
-let touchEndY = 0;
-
 // 時間文字列から HH:mm を抽出
 function extractHHMM(timeStr) {
   if (!timeStr) return '';
@@ -97,14 +91,14 @@ function setupSwipeEvents() {
 
   document.addEventListener('touchstart', (e) => {
     if (typeof isModalActive === 'function' && isModalActive()) return;
-    touchStartX = e.changedTouches[0].screenX;
-    touchStartY = e.changedTouches[0].screenY;
+    window.touchStartX = e.changedTouches[0].screenX;
+    window.touchStartY = e.changedTouches[0].screenY;
   }, { passive: true });
   
   document.addEventListener('touchmove', (e) => {
     if (typeof isModalActive === 'function' && isModalActive()) return;
-    let moveX = e.changedTouches[0].screenX - touchStartX;
-    let moveY = e.changedTouches[0].screenY - touchStartY;
+    let moveX = e.changedTouches[0].screenX - (window.touchStartX || 0);
+    let moveY = e.changedTouches[0].screenY - (window.touchStartY || 0);
     if (Math.abs(moveX) > Math.abs(moveY) && Math.abs(moveX) < 80) {
       menuList.style.transform = `translateX(${moveX}px)`;
       menuList.style.opacity = `${1 - Math.abs(moveX)/150}`;
@@ -113,8 +107,8 @@ function setupSwipeEvents() {
 
   document.addEventListener('touchend', (e) => {
     if (typeof isModalActive === 'function' && isModalActive()) return;
-    touchEndX = e.changedTouches[0].screenX;
-    touchEndY = e.changedTouches[0].screenY;
+    window.touchEndX = e.changedTouches[0].screenX;
+    window.touchEndY = e.changedTouches[0].screenY;
     menuList.style.transform = '';
     menuList.style.opacity = '';
     handleSwipeGesture();
@@ -122,8 +116,8 @@ function setupSwipeEvents() {
 }
 
 function handleSwipeGesture() {
-  const deltaX = touchEndX - touchStartX;
-  const deltaY = touchEndY - touchStartY;
+  const deltaX = (window.touchEndX || 0) - (window.touchStartX || 0);
+  const deltaY = (window.touchEndY || 0) - (window.touchStartY || 0);
   if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 60) {
     const currentIndex = state.categories.indexOf(state.currentCategory);
     if (deltaX < 0 && currentIndex < state.categories.length - 1) switchCategory(state.categories[currentIndex + 1]);
