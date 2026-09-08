@@ -60,7 +60,7 @@
         <option value="7">7 名様</option>
         <option value="8">8 名様</option>
       </select>
-      <button class="modal-submit-btn" onclick="submitModalQty()">確定してメニューへ</button>
+      <button class="modal-submit-btn" onclick="handleStartApp()">確定してメニューへ</button>
     </div>
   </div>
 
@@ -157,22 +157,33 @@
   <script src="js/history.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/app.js"></script>
-  <!-- デバッグ用エラー表示スクリプト（詳細版） -->
+
   <script>
-    // JavaScript実行エラーを捕捉
+    // 人数決定ボタンを押した際の処理（全画面化 + 本来の人数確定処理を実行）
+    function handleStartApp() {
+      // ユーザー操作の直後なので安全に全画面化を実行可能
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.log("全画面表示はスキップされました:", err);
+        });
+      }
+      
+      // 本来の人数確定処理を呼び出し（modal.js 内の関数）
+      if (typeof submitModalQty === 'function') {
+        submitModalQty();
+      }
+    }
+
+    // エラーハンドラー
     window.onerror = function(msg, url, line, col, error) {
       const file = url ? url.split('/').pop() : '不明';
       alert("【エラー検知】\n内容: " + msg + "\nファイル: " + file + "\n行数: " + line + "行目");
       return false;
     };
 
-    // 非同期処理（fetch等）のエラーを捕捉
     window.addEventListener('unhandledrejection', function(event) {
       alert("【通信/Promiseエラー】\n内容: " + event.reason);
     });
   </script>
-</body>
-</html>
-
 </body>
 </html>
