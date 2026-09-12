@@ -63,7 +63,33 @@
   box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
   box-sizing: border-box; 
   width: 100%; 
+  position: relative; /* 品切れオーバーレイ表示用 */
 } 
+
+/* --- 追加：品切れ（sold-out）スタイル --- */
+.menu-card.sold-out {
+  opacity: 0.55;
+  filter: grayscale(80%);
+  pointer-events: none; /* カート追加などの操作を完全に無効化 */
+}
+
+.menu-card.sold-out::after {
+  content: "本日品切れ";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(211, 47, 47, 0.9);
+  color: #ffffff;
+  padding: 6px 16px;
+  font-weight: bold;
+  font-size: 1rem;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 10;
+  white-space: nowrap;
+}
+/* ------------------------------------- */
 
 .menu-body { 
   display: flex; 
