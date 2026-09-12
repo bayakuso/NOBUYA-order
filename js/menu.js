@@ -3,48 +3,74 @@
 // ======================================
 
 // メニュー取得と初期描画
-async function fetchMenus() {
+function renderMenuList() {
   const listContainer = document.getElementById('menu-list');
-  try {
-    const rawData = await apiFetchMenus();
-    console.log("GAS取得データ:", rawData);
+  if (!listContainer) return;
+  listContainer.innerHTML = '';
+  const filtered = state.allMenus.filter(m => m.category === state.currentCategory);
+  if (filtered.length === 0) {
+    listContainer.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">メニューがありません。</p>';
+    return;
+  }
+  listContainer.style.opacity = 0;
+  
+  filtered.forEach(item => {
+    // 品切れフラグの判定（表記揺れ・型揺れを吸収）
+    const isSoldOut = Boolean(
+      item.is_sold_out || 
+      item.is_out_of_stock || 
+      item.isSoldOut || 
+      item.outOfStock || 
+      item.sold_out === true || 
+      item.sold_out === 'true'
+    );
 
-    // レスポンスのデータ構造を判定・正規化（オブジェクトで返ってきた場合の吸収処理）
-    let data = rawData;
-    if (typeof rawData === 'string') {
-      try { data = JSON.parse(rawData); } catch(e) {}
-    }
-    if (rawData && !Array.isArray(rawData)) {
-      data = rawData.data || rawData.menus || rawData.items || [];
+    const card = document.createElement('div');
+    // 品切れの場合は sold-out クラスを追加
+    card.className = `menu-card ${isSoldOut ? 'sold-out' : ''}`;
+
+    let imgSrc = (item.image_base64 && item.image_base64.trim() !== "" && item.image_base64 !== "undefined") ? item.image_base64 : 
+                 (item.image && item.image.trim() !== "" && item.image !== "undefined") ? item.image : "";
+    if (!imgSrc) imgSrc = CONFIG.NO_IMAGE_SVG;
+
+    const qtyId = `qty-${item.menu_id}`;
+    const rawOptionValue = item.options || item.option || '';
+    let buttonAreaHtml = '';
+
+    if (isSoldOut) {
+      // 品切れ時は操作ボタンを非表示化（CSSの ::after で「本日品切れ」が表示されます）
+      buttonAreaHtml = `<button class="add-cart-btn" disabled style="visibility:hidden;">品切れ</button>`;
+    } else if (rawOptionValue && String(rawOptionValue).trim() !== '') {
+      item.options = String(rawOptionValue).trim();
+      buttonAreaHtml = `<button class="add-cart-btn has-option" onclick="openOptionModal('${item.menu_id}')">選択</button>`;
+    } else {
+      buttonAreaHtml = `
+        <div class="controls-row">
+          <button class="qty-btn" onclick="inlineChangeQty('${qtyId}', -1)">−</button>
+          <span class="qty-display" id="${qtyId}">1</span>
+          <button class="qty-btn" onclick="inlineChangeQty('${qtyId}', 1)">+</button>
+          <button class="add-cart-btn" onclick="addToCart('${item.menu_id}', '${qtyId}')" style="margin-left:4px;">追加</button>
+        </div>
+      `;
     }
 
-    if (!Array.isArray(data) || data.length === 0) {
-      listContainer.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">メニューが登録されていません。</p>';
-      return;
-    }
-
-    state.allMenus = data;
-    state.categories = [...new Set(state.allMenus.map(m => m.category).filter(Boolean))];
-    
-    const targetCat = urlParams.get('cat');
-    if (targetCat && state.categories.includes(decodeURIComponent(targetCat))) {
-      state.currentCategory = decodeURIComponent(targetCat);
-    } else if (state.categories.length > 0) {
-      state.currentCategory = state.categories[0];
-    }
-    
-    buildCategoryBar();
-    renderMenuList();
-  } catch (err) {
-    console.error("Fetch error:", err);
-    listContainer.innerHTML = `
-      <div style="text-align:center; color:#d32f2f; padding:20px;">
-        <p style="font-weight:bold;">データ取得失敗</p>
-        <p style="font-size:0.8rem; color:#666;">${err.message}</p>
-        <button onclick="fetchMenus()" style="margin-top:10px; padding:6px 12px;">再読み込み</button>
+    card.innerHTML = `
+      <div class="menu-name">${item.name}</div>
+      <div class="menu-body">
+        <img src="${imgSrc}" class="menu-img" alt="${item.name}" onerror="this.onerror=null; this.src=CONFIG.NO_IMAGE_SVG;">
+        <div class="menu-details">
+          <div class="price-block">
+            <div class="menu-price">${Number(item.price).toLocaleString()}</div>
+          </div>
+          <div class="action-block">
+            ${buttonAreaHtml}
+          </div>
+        </div>
       </div>
     `;
-  }
+    listContainer.appendChild(card);
+  });
+  setTimeout(() => { listContainer.style.opacity = 1; }, 50);
 }
 
 // カテゴリタブの構築
