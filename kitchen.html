@@ -276,47 +276,46 @@
     }
 
     // 品切れ状態の切り替え関数
-    function toggleSoldOut() {
-      const select = document.getElementById('soldout-menu');
-      const menuId = select.value;
-      const btn = document.getElementById('btn-toggle-soldout');
+function toggleSoldOut() {
+  const select = document.getElementById('soldout-menu');
+  const menuId = select.value;
+  const btn = document.getElementById('btn-toggle-soldout');
 
-      if (!menuId) {
-        showToast("メニューを選択してください", true);
-        return;
-      }
+  if (!menuId) {
+    showToast("メニューを選択してください", true);
+    return;
+  }
 
-      const selectedOption = select.options[select.selectedIndex];
-      const currentSoldOut = selectedOption.dataset.isSoldOut === 'true';
-      const newStatus = !currentSoldOut; // ON/OFF反転
+  const selectedOption = select.options[select.selectedIndex];
+  const currentSoldOut = selectedOption.dataset.isSoldOut === 'true';
+  const newStatus = !currentSoldOut; // ON/OFF反転
 
-      btn.disabled = true;
+  btn.disabled = true;
 
-      const params = new URLSearchParams();
-      params.append('action', 'toggle_soldout');
-      params.append('menuId', menuId);
-      params.append('isSoldOut', newStatus);
+  const params = new URLSearchParams();
+  params.append('action', 'toggle_out_of_stock'); 
+  params.append('menuId', menuId);
+  params.append('isSoldOut', newStatus);
 
-      fetch(CONFIG.GAS_URL, {
-        method: 'POST',
-        body: params,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      })
-      .then(res => res.json())
-      .then(res => {
-        if (res.status === 'success') {
-          showToast(newStatus ? "品切れに設定しました" : "販売を再開しました");
-          loadKitchenData();
-        } else {
-          showToast("エラー: " + res.message, true);
-        }
-      })
-      .catch(err => showToast("通信に失敗しました", true))
-      .finally(() => {
-        btn.disabled = false;
-      });
+  fetch(CONFIG.GAS_URL, {
+    method: 'POST',
+    body: params,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  })
+  .then(res => res.json())
+  .then(res => {
+    if (res.status === 'success') {
+      showToast(newStatus ? "品切れに設定しました" : "販売を再開しました");
+      loadKitchenData();
+    } else {
+      showToast("エラー: " + res.message, true);
     }
-
+  })
+  .catch(err => showToast("通信に失敗しました", true))
+  .finally(() => {
+    btn.disabled = false;
+  });
+}
     // トースト通知関数
     function showToast(message, isError = false) {
       const existing = document.getElementById("toast-popup");
