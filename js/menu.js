@@ -3,17 +3,56 @@
 // ======================================
 
 // カテゴリタブの構築
+function buildCategoryBar() {
+  const bar = document.getElementById('category-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  
+  if (!state.categories || state.categories.length === 0) return;
+
+  state.categories.forEach(cat => {
+    const tab = document.createElement('div');
+    tab.className = `category-tab ${state.currentCategory === cat ? 'active' : ''}`;
+    tab.innerText = cat;
+    tab.onclick = () => switchCategory(cat);
+    bar.appendChild(tab);
+  });
+  scrollToActiveTab();
+}
+
+// カテゴリ切り替え
+function switchCategory(cat) {
+  state.currentCategory = cat;
+  document.querySelectorAll('.category-tab').forEach(t => {
+    if (t.innerText === cat) t.classList.add('active');
+    else t.classList.remove('active');
+  });
+  scrollToActiveTab();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  renderMenuList();
+}
+
+// アクティブタブの位置までスクロール
+function scrollToActiveTab() {
+  const activeTab = document.querySelector('.category-tab.active');
+  if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+}
+
+// メニュー一覧の描画
 function renderMenuList() {
   const listContainer = document.getElementById('menu-list');
   if (!listContainer) return;
   listContainer.innerHTML = '';
 
+  // state.allMenus の存在チェック（未初期化時のエラー防止）
+  const allMenus = state.allMenus || [];
+
   // state.currentCategory が未設定の場合、メニューデータの最初のカテゴリを自動セット
-  if (!state.currentCategory && state.allMenus && state.allMenus.length > 0) {
-    state.currentCategory = state.allMenus[0].category || 'その他';
+  if (!state.currentCategory && allMenus.length > 0) {
+    state.currentCategory = allMenus[0].category || 'その他';
   }
 
-  const filtered = state.allMenus.filter(m => m.category === state.currentCategory);
+  const filtered = allMenus.filter(m => m.category === state.currentCategory);
 
   // 読み込み中画面（ローダー）が存在する場合は非表示化
   const loader = document.getElementById('loading') || document.getElementById('loading-screen') || document.getElementById('loader');
@@ -75,7 +114,7 @@ function renderMenuList() {
         <img src="${imgSrc}" class="menu-img" alt="${item.name}" onerror="this.onerror=null; this.src=CONFIG.NO_IMAGE_SVG;">
         <div class="menu-details">
           <div class="price-block">
-            <div class="menu-price">${Number(item.price).toLocaleString()}</div>
+            <div class="menu-price">${Number(item.price || 0).toLocaleString()}</div>
           </div>
           <div class="action-block">
             ${buttonAreaHtml}
@@ -88,6 +127,7 @@ function renderMenuList() {
   
   setTimeout(() => { listContainer.style.opacity = 1; }, 50);
 }
+
 // 数量調整（インライン）
 function inlineChangeQty(qtyId, amount) {
   const el = document.getElementById(qtyId);
