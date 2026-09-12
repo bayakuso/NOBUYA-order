@@ -27,6 +27,7 @@
     .btn-checkout { width: 100%; background: #4caf50; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1.1rem; font-weight: bold; cursor: pointer; margin-top: 10px; }
     .btn-checkout:hover { background: #43a047; }
     .btn-checkout:disabled { background: #ccc; cursor: not-allowed; }
+    .empty-message { grid-column: 1 / -1; text-align: center; padding: 40px; color: #888; font-size: 1.1rem; }
   </style>
 </head>
 <body>
@@ -42,12 +43,11 @@
 
   <script src="js/config.js"></script>
   <script>
-    // 13台（カウンター 1〜10、テーブル T1〜T3）の定義
     const TABLES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'T1', 'T2', 'T3'];
 
     window.onload = () => {
       loadCashierData();
-      setInterval(loadCashierData, CONFIG.REFRESH_INTERVAL);
+      setInterval(loadCashierData, CONFIG.REFRESH_INTERVAL || 5000);
     };
 
     function formatTableName(tableId) {
@@ -61,7 +61,7 @@
     }
 
     function loadCashierData() {
-      fetch(`${CONFIG.GAS_URL}?mode=kitchen&action=history`)
+      fetch(`${CONFIG.GAS_URL}?mode=kitchen&action=history&_t=${Date.now()}`)
         .then(res => res.json())
         .then(data => {
           renderCashierTables(data.orders || []);
@@ -72,6 +72,8 @@
     function renderCashierTables(allOrders) {
       const grid = document.getElementById('tables-grid');
       grid.innerHTML = '';
+
+      let activeTableCount = 0;
 
       TABLES.forEach(tableId => {
         let tableOrders = allOrders.filter(o => String(o.tableId).trim().toUpperCase() === tableId.toUpperCase());
@@ -89,54 +91,45 @@
 
         const isRequested = activeOrders.some(o => o.status === '会計要請');
         
-        // 注文状態の分解
+        // 会計に進んだ卓（会計要請がある卓）のみを表示対象とする
+        if (!isRequested) return;
+
+        activeTableCount++;
+
         const pendingOrders = activeOrders.filter(o => o.status === '受付' || o.status === '調理中');
-        const servedOrders = activeOrders.filter(o => o.status === '提供済');
 
         let totalPrice = 0;
         let itemsHtml = '';
 
-        if (activeOrders.length === 0) {
-          itemsHtml = '<div style="color:#aaa; text-align:center; padding:20px 0;">空席 / 利用なし</div>';
-        } else {
-          activeOrders.forEach(item => {
-            if (item.status === 'キャンセル' || item.status === '会計要請') return;
+        activeOrders.forEach(item => {
+          if (item.status === 'キャンセル' || item.status === '会計要請' || item.menuName === '【会計要請】') return;
 
-            const price = Number(item.price) || 0;
-            const qty = Number(item.quantity) || 1;
-            const subtotal = price * qty;
-            
-            // 提供済みの商品のみ合計金額に計上
-            if (item.status === '提供済') {
-              totalPrice += subtotal;
-            }
+          const price = Number(item.price) || 0;
+          const qty = Number(item.quantity) || 1;
+          const subtotal = price * qty;
+          
+          if (item.status === '提供済') {
+            totalPrice += subtotal;
+          }
 
-            const isPendingItem = item.status === '受付' || item.status === '調理中';
+          const isPendingItem = item.status === '受付' || item.status === '調理中';
 
-            itemsHtml += `
-              <div class="order-item ${isPendingItem ? 'cooking' : ''}">
-                <span>${item.menuName} × ${qty} ${isPendingItem ? `[${item.status}]` : ''}</span>
-                <span>${subtotal.toLocaleString()} 円</span>
-              </div>
-            `;
-          });
-        }
+          itemsHtml += `
+            <div class="order-item ${isPendingItem ? 'cooking' : ''}">
+              <span>${item.menuName} × ${qty} ${isPendingItem ? `[${item.status}]` : ''}</span>
+              <span>${subtotal.toLocaleString()} 円</span>
+            </div>
+          `;
+        });
 
         const hasPending = pendingOrders.length > 0;
         const displayName = formatTableName(tableId);
 
-        let badgeClass = 'badge-normal';
-        let badgeText = '着席中';
-        if (isRequested) {
-          badgeClass = 'badge-calling';
-          badgeText = '会計呼び出し中';
-        } else if (hasPending) {
-          badgeClass = 'badge-pending';
-          badgeText = '調理・提供中';
-        }
+        let badgeClass = 'badge-calling';
+        let badgeText = '会計呼び出し中';
 
         const card = document.createElement('div');
-        card.className = `table-card ${isRequested ? 'requested' : ''} ${hasPending ? 'has-pending' : ''}`;
+        card.className = `table-card requested ${hasPending ? 'has-pending' : ''}`;
 
         card.innerHTML = `
           <div>
@@ -145,7 +138,7 @@
               <span class="status-badge ${badgeClass}">${badgeText}</span>
             </div>
             <div class="order-list">
-              ${itemsHtml}
+              ${itemsHtml || '<div style="color:#aaa; text-align:center; padding:10px 0;">注文明細なし</div>'}
             </div>
           </div>
           <div>
@@ -153,29 +146,29 @@
             <div class="total-price-box">
               合計: ${totalPrice.toLocaleString()} 円
             </div>
-            ${activeOrders.length > 0 ? `
-              <button 
-                class="btn-checkout" 
-                onclick="settleTable('${tableId}')" 
-                ${hasPending ? 'disabled title="すべての料理・ドリンクを提供完了にしてから会計してください"' : ''}>
-                ${hasPending ? '未提供品あり（会計不可）' : '会計完了処理'}
-              </button>
-            ` : ''}
+            <button 
+              class="btn-checkout" 
+              onclick="settleTable('${tableId}')" 
+              ${hasPending ? 'disabled title="すべての料理・ドリンクを提供完了にしてから会計してください"' : ''}>
+              ${hasPending ? '未提供品あり（会計不可）' : '会計完了（売上保存）'}
+            </button>
           </div>
         `;
 
         grid.appendChild(card);
       });
+
+      if (activeTableCount === 0) {
+        grid.innerHTML = '<div class="empty-message">現在、会計待ち（呼び出し中）の卓はありません。</div>';
+      }
     }
 
     function settleTable(tableId) {
       const displayName = formatTableName(tableId);
-      if (!confirm(`【${displayName}】の会計を完了にし、卓を空けますか？`)) return;
+      if (!confirm(`【${displayName}】の会計を完了し、売上データへ保存しますか？`)) return;
 
       const params = new URLSearchParams();
-      params.append('action', 'update_status');
-      params.append('orderId', 'SETTLE_' + tableId);
-      params.append('status', '会計済');
+      params.append('action', 'settle_payment');
       params.append('tableId', tableId);
 
       fetch(CONFIG.GAS_URL, {
@@ -186,13 +179,16 @@
       .then(res => res.json())
       .then(res => {
         if (res.status === 'success') {
-          alert(`【${displayName}】の会計処理が完了しました。`);
+          alert(`【${displayName}】の会計処理および売上保存が完了しました。`);
           loadCashierData();
         } else {
-          alert("エラー: " + res.message);
+          alert("エラー: " + (res.message || "処理に失敗しました"));
         }
       })
-      .catch(err => alert("通信に失敗しました。"));
+      .catch(err => {
+        console.error("送信エラー:", err);
+        alert("通信に失敗しました。ネットワーク状態を確認してください。");
+      });
     }
   </script>
 </body>
