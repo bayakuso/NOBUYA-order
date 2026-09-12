@@ -25,31 +25,32 @@ function parseTimeToMinutes(timeStr) {
 // アプリ起動時の決済初期インデックス同期
 async function initCheckoutIndex() {
   try {
+    if (typeof apiFetchCheckoutIndex !== 'function' || typeof tableId === 'undefined') return;
     const data = await apiFetchCheckoutIndex(tableId);
     const orders = data.orders || [];
     
-    const urlTimeStr = urlParams.get('time') ? decodeURIComponent(urlParams.get('time')) : "";
+    const urlTimeStr = (typeof urlParams !== 'undefined' && urlParams.get('time')) ? decodeURIComponent(urlParams.get('time')) : "";
     const urlTimeMinutes = parseTimeToMinutes(urlTimeStr);
 
     orders.forEach(o => {
       if (String(o.tableId).trim() === String(tableId).trim() && o.status === "会計済") {
         const idx = parseInt(o.rowIndex, 10);
-        if (idx > lastCheckoutRowIndex) {
+        if (typeof lastCheckoutRowIndex !== 'undefined' && idx > lastCheckoutRowIndex) {
           lastCheckoutRowIndex = idx;
         }
         
-        if (!isViewer && urlTimeMinutes > 0) {
+        if (typeof isViewer !== 'undefined' && !isViewer && urlTimeMinutes > 0) {
           const checkedTimeMinutes = parseTimeToMinutes(o.time);
           if (checkedTimeMinutes >= urlTimeMinutes) {
-            isAppDisabled = true; 
+            if (typeof isAppDisabled !== 'undefined') isAppDisabled = true; 
           }
         }
       }
     });
-    initialOrdersChecked = true;
+    if (typeof initialOrdersChecked !== 'undefined') initialOrdersChecked = true;
   } catch(e) {
     console.error("決済初期位置の同期に失敗しました:", e);
-    initialOrdersChecked = true;
+    if (typeof initialOrdersChecked !== 'undefined') initialOrdersChecked = true;
   }
 }
 
@@ -138,8 +139,8 @@ function handleSwipeGesture() {
   if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 60) {
     if (typeof state !== 'undefined' && state.categories) {
       const currentIndex = state.categories.indexOf(state.currentCategory);
-      if (deltaX < 0 && currentIndex < state.categories.length - 1) switchCategory(state.categories[currentIndex + 1]);
-      else if (deltaX > 0 && currentIndex > 0) switchCategory(state.categories[currentIndex - 1]);
+      if (deltaX < 0 && currentIndex < state.categories.length - 1 && typeof switchCategory === 'function') switchCategory(state.categories[currentIndex + 1]);
+      else if (deltaX > 0 && currentIndex > 0 && typeof switchCategory === 'function') switchCategory(state.categories[currentIndex - 1]);
     }
   }
 }
@@ -161,39 +162,19 @@ function submitModalQty() {
   if (typeof closeModal === 'function') closeModal('customer-modal');
 }
 
-// フルスクリーン化要求
-function triggerMobileFullscreen() {
-  if (document.fullscreenElement) return;
-
-  const docEl = document.documentElement;
-  try {
-    if (docEl.requestFullscreen) {
-      docEl.requestFullscreen().catch(() => {});
-    } else if (docEl.webkitRequestFullscreen) {
-      docEl.webkitRequestFullscreen();
-    } else if (docEl.mozRequestFullScreen) {
-      docEl.mozRequestFullScreen();
-    }
-  } catch (err) {
-    // エラー無視
-  }
-  
-  setTimeout(() => { window.scrollTo(0, 1); }, 100);
-}
-
-// メニュー取得〜描画を一括実行する標準関数
+// メニュー取得〜描画を一括実行する強力な統合関数
 async function loadAndRenderMenu() {
   try {
-    let rawData = [];
+    let rawData = null;
     if (typeof apiFetchMenus === 'function') {
       rawData = await apiFetchMenus();
     } else if (typeof fetchMenus === 'function') {
       rawData = await fetchMenus();
     }
 
-    console.log("【通信成功】取得データ:", rawData);
+    console.log("【通信成功】取得元データ:", rawData);
 
-    // 配列構造の吸収処理
+    // ネストされたオブジェクト構造を完全に抽出・分解
     let menus = [];
     if (Array.isArray(rawData)) {
       menus = rawData;
@@ -201,29 +182,39 @@ async function loadAndRenderMenu() {
       menus = rawData.menus;
     } else if (rawData && Array.isArray(rawData.data)) {
       menus = rawData.data;
+    } else if (rawData && rawData.data && Array.isArray(rawData.data.menus)) {
+      menus = rawData.data.menus;
     }
 
-    // カテゴリ等の文字列安全化
+    if (!menus || menus.length === 0) {
+      console.warn("メニュー配列が空です。");
+      return;
+    }
+
+    // 全メニュー保持配列へ格納
     state.allMenus = menus.map(m => ({
       ...m,
       category: String(m.category || 'その他').trim()
     }));
 
-    if (state.allMenus.length > 0) {
-      state.categories = [...new Set(state.allMenus.map(m => m.category))];
-      if (!state.currentCategory || !state.categories.includes(state.currentCategory)) {
-        state.currentCategory = state.categories[0];
-      }
-      if (typeof buildCategoryBar === 'function') {
-        buildCategoryBar();
-      }
+    // カテゴリの抽出と割り当て
+    state.categories = [...new Set(state.allMenus.map(m => m.category))];
+    if (!state.currentCategory || !state.categories.includes(state.currentCategory)) {
+      state.currentCategory = state.categories[0];
     }
 
+    console.log(`【描画準備完了】全${state.allMenus.length}件のメニュー, カテゴリ:`, state.categories);
+
+    // カテゴリバーとメニューリストの画面レンダリング実行
+    if (typeof buildCategoryBar === 'function') {
+      buildCategoryBar();
+    }
     if (typeof renderMenuList === 'function') {
       renderMenuList();
     }
+
   } catch (err) {
-    console.error("メニュー取得エラー:", err);
+    console.error("メニュー取得・描画エラー:", err);
     const listContainer = document.getElementById('menu-list');
     if (listContainer) {
       listContainer.innerHTML = '<p style="text-align:center;color:#d32f2f;padding:40px;">データの読み込みに失敗しました。</p>';
@@ -232,7 +223,7 @@ async function loadAndRenderMenu() {
 }
 
 // 全体初期化エントリーポイント
-window.onload = async () => {
+window.addEventListener('DOMContentLoaded', async () => {
   try {
     const tableEl = document.getElementById('display-table-id');
     if (tableEl && typeof tableId !== 'undefined') {
@@ -252,55 +243,58 @@ window.onload = async () => {
     updateHeaderStatusBadges();
     await initCheckoutIndex();
 
-    if (typeof isViewer !== 'undefined' && !isViewer && initialOrdersChecked && isAppDisabled) {
+    if (typeof isViewer !== 'undefined' && !isViewer && typeof initialOrdersChecked !== 'undefined' && initialOrdersChecked && typeof isAppDisabled !== 'undefined' && isAppDisabled) {
       forceLockExpiredSubDevice();
       return; 
     }
   } catch (err) {
-    console.error("初期化処理の一部で例外が発生しましたが、メニュー読み込みを続行します:", err);
+    console.error("初期化処理で例外が発生しましたが、メニュー読み込みを続行します:", err);
   }
 
-  // メニュー読み込み処理を実行
+  // メニュー読み込み・描画処理を実行
   await loadAndRenderMenu();
 
   if (typeof updateCartBadge === 'function') updateCartBadge();
   setupSwipeEvents();
-};
+});
 
 // 卓のお会計要請・状態監視ループ
-setInterval(async function() {
-  if (!initialOrdersChecked || isAppDisabled) return;
-  try {
-    const data = await apiCheckStatus(tableId);
-    const orders = data.orders || [];
-    const thisTableOrders = orders.filter(o => String(o.tableId).trim() === String(tableId).trim());
-    const currentOrders = thisTableOrders.filter(o => parseInt(o.rowIndex, 10) > lastCheckoutRowIndex);
-    const hasCheckoutRequested = currentOrders.some(o => o.status === "会計要請");
-    const hasCheckoutSettled = thisTableOrders.some(o => o.status === "会計済");
-    const lockOverlay = document.getElementById('checkout-lock-overlay');
-    const isCurrentlyLocked = (lockOverlay && lockOverlay.style.display === 'flex');
-    
-    if (hasCheckoutRequested) {
-      if (!isCurrentlyLocked && lockOverlay) {
-        ['cart-modal', 'history-modal', 'option-modal'].forEach(id => {
-          if (typeof closeModal === 'function') closeModal(id);
-        });
-        lockOverlay.style.display = 'flex';
+if (typeof CONFIG !== 'undefined' && CONFIG.REFRESH_INTERVAL) {
+  setInterval(async function() {
+    if (typeof initialOrdersChecked === 'undefined' || !initialOrdersChecked || (typeof isAppDisabled !== 'undefined' && isAppDisabled)) return;
+    try {
+      if (typeof apiCheckStatus !== 'function' || typeof tableId === 'undefined') return;
+      const data = await apiCheckStatus(tableId);
+      const orders = data.orders || [];
+      const thisTableOrders = orders.filter(o => String(o.tableId).trim() === String(tableId).trim());
+      const currentOrders = thisTableOrders.filter(o => parseInt(o.rowIndex, 10) > lastCheckoutRowIndex);
+      const hasCheckoutRequested = currentOrders.some(o => o.status === "会計要請");
+      const hasCheckoutSettled = thisTableOrders.some(o => o.status === "会計済");
+      const lockOverlay = document.getElementById('checkout-lock-overlay');
+      const isCurrentlyLocked = (lockOverlay && lockOverlay.style.display === 'flex');
+      
+      if (hasCheckoutRequested) {
+        if (!isCurrentlyLocked && lockOverlay) {
+          ['cart-modal', 'history-modal', 'option-modal'].forEach(id => {
+            if (typeof closeModal === 'function') closeModal(id);
+          });
+          lockOverlay.style.display = 'flex';
+        }
+        return;
       }
-      return;
-    }
-    if (isCurrentlyLocked && (!hasCheckoutRequested || hasCheckoutSettled)) {
-      if (typeof state !== 'undefined') state.cart = [];
-      if (typeof updateCartBadge === 'function') updateCartBadge();
-      if (isViewer) {
-        if (lockOverlay) lockOverlay.style.display = 'none';
-        window.location.href = window.location.origin + window.location.pathname + `?table=${encodeURIComponent(tableId)}&view=true`;
-      } else {
-        isAppDisabled = true;
-        forceLockExpiredSubDevice();
+      if (isCurrentlyLocked && (!hasCheckoutRequested || hasCheckoutSettled)) {
+        if (typeof state !== 'undefined') state.cart = [];
+        if (typeof updateCartBadge === 'function') updateCartBadge();
+        if (typeof isViewer !== 'undefined' && isViewer) {
+          if (lockOverlay) lockOverlay.style.display = 'none';
+          window.location.href = window.location.origin + window.location.pathname + `?table=${encodeURIComponent(tableId)}&view=true`;
+        } else {
+          if (typeof isAppDisabled !== 'undefined') isAppDisabled = true;
+          forceLockExpiredSubDevice();
+        }
       }
+    } catch (e) {
+      console.error("決済連携監視システムエラー:", e);
     }
-  } catch (e) {
-    console.error("決済連携監視システムエラー:", e);
-  }
-}, CONFIG.REFRESH_INTERVAL);
+  }, CONFIG.REFRESH_INTERVAL);
+}
