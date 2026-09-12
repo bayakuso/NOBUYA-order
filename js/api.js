@@ -2,28 +2,19 @@
 // バックエンド (GAS) 通信処理 (API)
 // ======================================
 
-// 1. メニュー一覧を取得する（安全抽出版）
+// 1. メニュー一覧を取得する
 async function apiFetchMenus() {
-  const requestUrl = `${CONFIG.GAS_URL}?action=get_menus&_t=${Date.now()}`;
-  const response = await fetch(requestUrl, {
-    method: "GET",
-    redirect: "follow"
-  });
-  if (!response.ok) {
-    throw new Error(`HTTPエラー: ${response.status}`);
+  try {
+    const response = await fetch(CONFIG.API_URL + '?action=getMenus');
+    const data = await response.json();
+    console.log("★apiFetchMenusの取得結果:", data);
+    
+    // 【重要】ここで必ず受け取ったデータ（配列）をreturnして返す！
+    return data.data || data.menus || data;
+  } catch (error) {
+    console.error("メニュー取得エラー:", error);
+    throw error;
   }
-  const result = await response.json();
-  
-  // デバッグ用ログ
-  console.log("★apiFetchMenusの取得結果:", result);
-
-  // 配列構造の揺れを吸収して常に純粋な配列を返す
-  if (Array.isArray(result)) return result;
-  if (result && Array.isArray(result.menus)) return result.menus;
-  if (result && Array.isArray(result.data)) return result.data;
-  if (result && Array.isArray(result.result)) return result.result;
-  
-  return [];
 }
 
 // 2. 会計済みのインデックスを取得する（修正: redirect オプションを追加）
