@@ -4,7 +4,8 @@
 
 // 1. メニュー一覧を取得する
 async function apiFetchMenus() {
-  const response = await fetch(CONFIG.GAS_URL, {
+  const requestUrl = `${CONFIG.GAS_URL}?action=get_menus&_t=${Date.now()}`;
+  const response = await fetch(requestUrl, {
     method: "GET",
     redirect: "follow"
   });
