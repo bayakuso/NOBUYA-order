@@ -175,31 +175,30 @@
     }
 
     function updateStatus(orderId, status) {
-      const card = document.querySelector(`.order-card[data-order-id="${orderId}"]`);
-      const menuName = card ? card.dataset.menuName : '注文';
+  // 確認ダイアログ（confirm）をスキップして即時処理
+  const params = new URLSearchParams();
+  params.append('action', 'update_status');
+  params.append('orderId', orderId);
+  params.append('status', status);
 
-      if (!confirm(`【${menuName}】を「${status}」にしますか？`)) return;
-
-      const params = new URLSearchParams();
-      params.append('action', 'update_status');
-      params.append('orderId', orderId);
-      params.append('status', status);
-
-      fetch(CONFIG.GAS_URL, {
-        method: 'POST',
-        body: params,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      })
-      .then(res => res.json())
-      .then(res => {
-        if (res.status === 'success') {
-          loadKitchenData();
-        } else {
-          alert("エラー: " + res.message);
-        }
-      })
-      .catch(err => alert("通信に失敗しました。"));
+  fetch(CONFIG.GAS_URL, {
+    method: 'POST',
+    body: params,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  })
+  .then(res => res.json())
+  .then(res => {
+    if (res.status === 'success') {
+      // 成功トーストを表示（緑色）
+      showToast(`${status}に更新しました`);
+      loadKitchenData();
+    } else {
+      // エラートーストを表示（赤色）
+      showToast("エラー: " + res.message, true);
     }
+  })
+  .catch(err => showToast("通信に失敗しました", true));
+}
 
     function submitOralOrder() {
       const tableId = document.getElementById('oral-table').value;
@@ -240,6 +239,40 @@
         btn.disabled = false;
       });
     }
+    // ポップアップ（トースト通知）表示関数
+function showToast(message, isError = false) {
+  const existing = document.getElementById("toast-popup");
+  if (existing) existing.remove();
+
+  const toast = document.createElement("div");
+  toast.id = "toast-popup";
+  toast.innerText = message;
+  
+  // 暗い厨房モニター画面で見やすいスタイル設定
+  Object.assign(toast.style, {
+    position: "fixed",
+    bottom: "30px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    backgroundColor: isError ? "#f44336" : "#4caf50",
+    color: "#ffffff",
+    padding: "14px 28px",
+    borderRadius: "8px",
+    fontSize: "1.2rem",
+    fontWeight: "bold",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+    zIndex: "9999",
+    transition: "opacity 0.3s ease"
+  });
+
+  document.body.appendChild(toast);
+
+  // 1.5秒後に自動で消去
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => toast.remove(), 300);
+  }, 1500);
+}
   </script>
 </body>
 </html>
