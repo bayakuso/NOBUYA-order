@@ -181,6 +181,56 @@ function triggerMobileFullscreen() {
   setTimeout(() => { window.scrollTo(0, 1); }, 100);
 }
 
+// メニュー取得〜描画を一括実行する標準関数
+async function loadAndRenderMenu() {
+  try {
+    let rawData = [];
+    if (typeof apiFetchMenus === 'function') {
+      rawData = await apiFetchMenus();
+    } else if (typeof fetchMenus === 'function') {
+      rawData = await fetchMenus();
+    }
+
+    console.log("【通信成功】取得データ:", rawData);
+
+    // 配列構造の吸収処理
+    let menus = [];
+    if (Array.isArray(rawData)) {
+      menus = rawData;
+    } else if (rawData && Array.isArray(rawData.menus)) {
+      menus = rawData.menus;
+    } else if (rawData && Array.isArray(rawData.data)) {
+      menus = rawData.data;
+    }
+
+    // カテゴリ等の文字列安全化
+    state.allMenus = menus.map(m => ({
+      ...m,
+      category: String(m.category || 'その他').trim()
+    }));
+
+    if (state.allMenus.length > 0) {
+      state.categories = [...new Set(state.allMenus.map(m => m.category))];
+      if (!state.currentCategory || !state.categories.includes(state.currentCategory)) {
+        state.currentCategory = state.categories[0];
+      }
+      if (typeof buildCategoryBar === 'function') {
+        buildCategoryBar();
+      }
+    }
+
+    if (typeof renderMenuList === 'function') {
+      renderMenuList();
+    }
+  } catch (err) {
+    console.error("メニュー取得エラー:", err);
+    const listContainer = document.getElementById('menu-list');
+    if (listContainer) {
+      listContainer.innerHTML = '<p style="text-align:center;color:#d32f2f;padding:40px;">データの読み込みに失敗しました。</p>';
+    }
+  }
+}
+
 // 全体初期化エントリーポイント
 window.onload = async () => {
   try {
@@ -210,10 +260,8 @@ window.onload = async () => {
     console.error("初期化処理の一部で例外が発生しましたが、メニュー読み込みを続行します:", err);
   }
 
-  // メニュー読み込み処理の実行
-  if (typeof fetchMenus === 'function') {
-    fetchMenus();
-  }
+  // メニュー読み込み処理を実行
+  await loadAndRenderMenu();
 
   if (typeof updateCartBadge === 'function') updateCartBadge();
   setupSwipeEvents();
