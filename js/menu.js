@@ -93,8 +93,20 @@ function renderMenuList() {
   listContainer.style.opacity = 0;
   
   filtered.forEach(item => {
+    // 品切れフラグの判定（表記揺れ・型揺れを吸収）
+    const isSoldOut = Boolean(
+      item.is_sold_out || 
+      item.is_out_of_stock || 
+      item.isSoldOut || 
+      item.outOfStock || 
+      item.sold_out === true || 
+      item.sold_out === 'true'
+    );
+
     const card = document.createElement('div');
-    card.className = 'menu-card';
+    // 品切れの場合は sold-out クラスを追加
+    card.className = `menu-card ${isSoldOut ? 'sold-out' : ''}`;
+
     let imgSrc = (item.image_base64 && item.image_base64.trim() !== "" && item.image_base64 !== "undefined") ? item.image_base64 : 
                  (item.image && item.image.trim() !== "" && item.image !== "undefined") ? item.image : "";
     if (!imgSrc) imgSrc = CONFIG.NO_IMAGE_SVG;
@@ -102,7 +114,11 @@ function renderMenuList() {
     const qtyId = `qty-${item.menu_id}`;
     const rawOptionValue = item.options || item.option || '';
     let buttonAreaHtml = '';
-    if (rawOptionValue && String(rawOptionValue).trim() !== '') {
+
+    if (isSoldOut) {
+      // 品切れ時は操作ボタンを非表示化（CSSの ::after で「本日品切れ」が表示されます）
+      buttonAreaHtml = `<button class="add-cart-btn" disabled style="visibility:hidden;">品切れ</button>`;
+    } else if (rawOptionValue && String(rawOptionValue).trim() !== '') {
       item.options = String(rawOptionValue).trim();
       buttonAreaHtml = `<button class="add-cart-btn has-option" onclick="openOptionModal('${item.menu_id}')">選択</button>`;
     } else {
