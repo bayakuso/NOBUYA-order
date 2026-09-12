@@ -13,15 +13,6 @@ function extractHHMM(timeStr) {
   return String(timeStr);
 }
 
-// 時間文字列を分数値へ変換
-function parseTimeToMinutes(timeStr) {
-  const hhmm = extractHHMM(timeStr);
-  if (!hhmm) return 0;
-  const parts = hhmm.split(':');
-  if (parts.length < 2) return 0;
-  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-}
-
 // ヘッダー情報ステータスバッジ更新
 function updateHeaderStatusBadges() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -47,8 +38,9 @@ function updateHeaderStatusBadges() {
   }
 }
 
-// 来店人数入力確定モーダル処理（確定後の画面遷移・モーダル全消去の確実化）
-function submitModalQty() {
+// 来店人数入力確定＆画面遷移処理（全画面化＋モーダル即時消去の統一実行）
+window.submitModalQty = function() {
+  // 1. 人数と時間をURLにセット
   const countEl = document.getElementById('modal-guest-count');
   const guestCount = countEl ? countEl.value : "1";
   const now = new Date(); 
@@ -59,24 +51,37 @@ function submitModalQty() {
   urlParams.set('time', timeStr);
   window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
   
+  // 2. ヘッダー表示の更新
   updateHeaderStatusBadges();
 
-  // モーダル本体とすべてのオーバーレイ要素を確実に削除・非表示化
+  // 3. モーダル・オーバーレイを強制非表示（display: none !important 適用）
   const custModal = document.getElementById('customer-modal');
   if (custModal) {
-    custModal.style.setProperty('display', 'none', 'important');
+    custModal.setAttribute('style', 'display: none !important;');
     custModal.classList.remove('active', 'show');
   }
 
-  // closeModal 関数がある場合は安全に実行
+  // 全てのモーダル背景（オーバーレイ）要素を巡回して非表示化
+  const overlays = document.querySelectorAll('.modal-overlay, .modal-backdrop');
+  overlays.forEach(overlay => {
+    overlay.setAttribute('style', 'display: none !important;');
+    overlay.classList.remove('active', 'show');
+  });
+
   if (typeof closeModal === 'function') {
-    try {
-      closeModal('customer-modal');
-    } catch (e) {
-      console.warn("closeModal実行補助:", e);
-    }
+    try { closeModal('customer-modal'); } catch (e) {}
   }
-}
+};
+
+// HTML内の handleStartApp を安全にオーバーライド
+window.handleStartApp = function() {
+  // 全画面化を試行（失敗しても止めない）
+  if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+  // 確定処理と画面切り替えを実行
+  window.submitModalQty();
+};
 
 // モバイル向けスワイプジェスチャー設定
 function setupSwipeEvents() {
@@ -123,7 +128,6 @@ function handleSwipeGesture() {
 
 // メニュー取得〜画面描画（最優先実行）
 async function loadAndRenderMenu() {
-  console.log("【開始】メニュー取得処理をスタートします...");
   try {
     let rawData = null;
     if (typeof apiFetchMenus === 'function') {
@@ -132,9 +136,6 @@ async function loadAndRenderMenu() {
       rawData = await fetchMenus();
     }
 
-    console.log("【取得データ受信】:", rawData);
-
-    // 配列データの強力な自動抽出
     let menus = [];
     if (Array.isArray(rawData)) {
       menus = rawData;
@@ -145,13 +146,11 @@ async function loadAndRenderMenu() {
     }
 
     if (!menus || menus.length === 0) {
-      console.warn("メニューデータが空です。");
       const listContainer = document.getElementById('menu-list');
       if (listContainer) listContainer.innerHTML = '<p style="text-align:center;padding:40px;">登録されているメニューがありません。</p>';
       return;
     }
 
-    // グローバルstateのセット
     if (typeof state !== 'undefined') {
       state.allMenus = menus.map(m => ({
         ...m,
@@ -164,17 +163,15 @@ async function loadAndRenderMenu() {
       }
     }
 
-    // 画面レンダリング実行
     if (typeof buildCategoryBar === 'function') {
       buildCategoryBar();
     }
     if (typeof renderMenuList === 'function') {
       renderMenuList();
     }
-    console.log("【完了】メニューの描画処理が正常に完了しました。");
 
   } catch (err) {
-    console.error("【エラー】メニュー取得・描画中に例外が発生しました:", err);
+    console.error("メニュー描画エラー:", err);
     const listContainer = document.getElementById('menu-list');
     if (listContainer) {
       listContainer.innerHTML = '<p style="text-align:center;color:#d32f2f;padding:40px;">メニューの読み込みに失敗しました。</p>';
@@ -182,33 +179,36 @@ async function loadAndRenderMenu() {
   }
 }
 
-// 即時起動関数（他の初期化に依存せず即座に読み込みを開始）
+// アプリ初期化実行
 (async function initApp() {
-  // 1. 最優先でメニューを表示
+  // 1. メニューをバックグラウンド・画面裏で描画完了させる
   await loadAndRenderMenu();
 
-  // 2. UI表示・ヘッダー更新
+  // 2. UI表示・ヘッダー更新・初期判定
   try {
     const tableEl = document.getElementById('display-table-id');
     if (tableEl && typeof tableId !== 'undefined') {
       tableEl.innerText = tableId;
     }
 
-    // viewer (スマホ連携モード等) 判定
     const urlParams = new URLSearchParams(window.location.search);
     const isViewer = urlParams.get('view') === 'true';
+    const hasNum = urlParams.has('num');
 
-    if (isViewer) {
-      const linkArea = document.getElementById('header-link-area');
-      const custModal = document.getElementById('customer-modal');
-      if (linkArea) linkArea.style.display = 'block';
-      if (custModal) custModal.style.display = 'flex'; 
+    // 既に人数セット済みの場合はモーダルを表示しない
+    const custModal = document.getElementById('customer-modal');
+    if (custModal) {
+      if (isViewer || !hasNum) {
+        custModal.style.display = 'flex';
+      } else {
+        custModal.setAttribute('style', 'display: none !important;');
+      }
     }
 
     updateHeaderStatusBadges();
     if (typeof updateCartBadge === 'function') updateCartBadge();
     setupSwipeEvents();
   } catch (e) {
-    console.warn("補助UIの初期化エラー（画面表示には影響なし）:", e);
+    console.warn("初期化補助エラー:", e);
   }
 })();
