@@ -3,48 +3,30 @@
 // ======================================
 
 // カテゴリタブの構築
-function buildCategoryBar() {
-  const bar = document.getElementById('category-bar');
-  if (!bar) return;
-  bar.innerHTML = '';
-  state.categories.forEach(cat => {
-    const tab = document.createElement('div');
-    tab.className = `category-tab ${state.currentCategory === cat ? 'active' : ''}`;
-    tab.innerText = cat;
-    tab.onclick = () => switchCategory(cat);
-    bar.appendChild(tab);
-  });
-  scrollToActiveTab();
-}
-
-// カテゴリ切り替え
-function switchCategory(cat) {
-  state.currentCategory = cat;
-  document.querySelectorAll('.category-tab').forEach(t => {
-    if(t.innerText === cat) t.classList.add('active');
-    else t.classList.remove('active');
-  });
-  scrollToActiveTab();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-  renderMenuList();
-}
-
-// アクティブタブの位置までスクロール
-function scrollToActiveTab() {
-  const activeTab = document.querySelector('.category-tab.active');
-  if (activeTab) activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-}
-
-// メニューカード一覧の描画
 function renderMenuList() {
   const listContainer = document.getElementById('menu-list');
   if (!listContainer) return;
   listContainer.innerHTML = '';
+
+  // state.currentCategory が未設定の場合、メニューデータの最初のカテゴリを自動セット
+  if (!state.currentCategory && state.allMenus && state.allMenus.length > 0) {
+    state.currentCategory = state.allMenus[0].category || 'その他';
+  }
+
   const filtered = state.allMenus.filter(m => m.category === state.currentCategory);
+
+  // 読み込み中画面（ローダー）が存在する場合は非表示化
+  const loader = document.getElementById('loading') || document.getElementById('loading-screen') || document.getElementById('loader');
+  if (loader) {
+    loader.style.display = 'none';
+  }
+
   if (filtered.length === 0) {
     listContainer.innerHTML = '<p style="text-align:center;color:#999;padding:20px;">メニューがありません。</p>';
+    listContainer.style.opacity = 1;
     return;
   }
+  
   listContainer.style.opacity = 0;
   
   filtered.forEach(item => {
@@ -103,9 +85,9 @@ function renderMenuList() {
     `;
     listContainer.appendChild(card);
   });
+  
   setTimeout(() => { listContainer.style.opacity = 1; }, 50);
 }
-
 // 数量調整（インライン）
 function inlineChangeQty(qtyId, amount) {
   const el = document.getElementById(qtyId);
