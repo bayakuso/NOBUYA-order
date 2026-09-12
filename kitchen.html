@@ -137,7 +137,7 @@ function loadKitchenData() {
     .catch(err => console.error("データ取得エラー:", err));
 }
 
-// メニューセレクトボックス（口頭注文・品切れ共通）の更新
+// 厨房モニター HTML内：メニューセレクトボックスの更新
 function updateMenuSelects(menus) {
   const oralSelect = document.getElementById('oral-menu');
   const soldoutSelect = document.getElementById('soldout-menu');
@@ -150,37 +150,48 @@ function updateMenuSelects(menus) {
   oralSelect.innerHTML = '<option value="">メニューを選択...</option>';
   soldoutSelect.innerHTML = '<option value="">メニューを選択...</option>';
 
+  // カテゴリーごとにメニューをグループ化
+  const groupedMenus = {};
   menus.forEach(m => {
-    // IDの表記揺れを吸収 (menu_id, menuId, id)
-    const id = m.menu_id ?? m.menuId ?? m.id;
-    // 名前の表記揺れを吸収 (name, menu_name, menuName)
-    const name = m.name ?? m.menu_name ?? m.menuName ?? '名称未設定';
-    // 価格の表記揺れを吸収
-    const price = (m.price !== undefined && m.price !== '') ? `${m.price}円` : '';
-    
-    // 品切れフラグの表記揺れを吸収 (is_sold_out, is_out_of_stock, isSoldOut, outOfStock)
-    const isSoldOut = Boolean(
-      m.is_sold_out || 
-      m.is_out_of_stock || 
-      m.isSoldOut || 
-      m.outOfStock || 
-      m.sold_out
-    );
+    const cat = m.category || m.category_name || 'その他';
+    if (!groupedMenus[cat]) groupedMenus[cat] = [];
+    groupedMenus[cat].push(m);
+  });
 
-    if (!id) return; // IDがない要素はスキップ
+  // グループごとに <optgroup> を生成
+  Object.keys(groupedMenus).forEach(cat => {
+    const optGroupOral = document.createElement('optgroup');
+    optGroupOral.label = `--- ${cat} ---`;
 
-    // 口頭注文用オプショングループ
-    const optOral = document.createElement('option');
-    optOral.value = id;
-    optOral.textContent = `${name} ${price ? `(${price})` : ''}${isSoldOut ? ' [品切れ中]' : ''}`;
-    oralSelect.appendChild(optOral);
+    const optGroupSold = document.createElement('optgroup');
+    optGroupSold.label = `--- ${cat} ---`;
 
-    // 品切れ切替用オプショングループ
-    const optSoldout = document.createElement('option');
-    optSoldout.value = id;
-    optSoldout.dataset.isSoldOut = isSoldOut ? 'true' : 'false';
-    optSoldout.textContent = `${isSoldOut ? '【品切れ中】' : '【販売中】'} ${name}`;
-    soldoutSelect.appendChild(optSoldout);
+    groupedMenus[cat].forEach(m => {
+      const id = m.menu_id ?? m.menuId ?? m.id;
+      const name = m.name ?? m.menu_name ?? m.menuName ?? '名称未設定';
+      const price = (m.price !== undefined && m.price !== '') ? `${m.price}円` : '';
+      const isSoldOut = Boolean(
+        m.is_sold_out || m.is_out_of_stock || m.isSoldOut || m.outOfStock || m.sold_out
+      );
+
+      if (!id) return;
+
+      // 口頭注文用
+      const optOral = document.createElement('option');
+      optOral.value = id;
+      optOral.textContent = `${name} ${price ? `(${price})` : ''}${isSoldOut ? ' [品切れ中]' : ''}`;
+      optGroupOral.appendChild(optOral);
+
+      // 品切れ切替用
+      const optSoldout = document.createElement('option');
+      optSoldout.value = id;
+      optSoldout.dataset.isSoldOut = isSoldOut ? 'true' : 'false';
+      optSoldout.textContent = `${isSoldOut ? '【品切れ中】' : '【販売中】'} ${name}`;
+      optGroupSold.appendChild(optSoldout);
+    });
+
+    oralSelect.appendChild(optGroupOral);
+    soldoutSelect.appendChild(optGroupSold);
   });
 
   oralSelect.value = currentOral;
