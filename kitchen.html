@@ -90,127 +90,151 @@
 
   <script src="js/config.js"></script>
   <script>
-    let allMenusCache = [];
+let allMenusCache = [];
 
-    window.onload = () => {
-      loadKitchenData();
-      setInterval(loadKitchenData, CONFIG.REFRESH_INTERVAL);
-    };
+window.onload = () => {
+  loadKitchenData();
+  setInterval(loadKitchenData, CONFIG.REFRESH_INTERVAL);
+};
 
-    function escapeHtml(str) {
-      if (!str) return '';
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
-    function formatTableName(tableId) {
-      if (!tableId) return '未設定';
-      const cleanId = String(tableId).trim();
-      if (/^T\d+$/i.test(cleanId)) return `テーブル ${cleanId.toUpperCase()}`;
-      if (!isNaN(cleanId)) return `カウンター ${cleanId}番席`;
-      return `${cleanId}番卓`;
-    }
+function formatTableName(tableId) {
+  if (!tableId) return '未設定';
+  const cleanId = String(tableId).trim();
+  if (/^T\d+$/i.test(cleanId)) return `テーブル ${cleanId.toUpperCase()}`;
+  if (!isNaN(cleanId)) return `カウンター ${cleanId}番席`;
+  return `${cleanId}番卓`;
+}
 
-    function loadKitchenData() {
-      fetch(`${CONFIG.GAS_URL}?mode=kitchen&_t=${Date.now()}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.menus && Array.isArray(data.menus)) {
-            allMenusCache = data.menus;
-            updateMenuSelects(data.menus);
-          }
-          renderOrders(data.orders || []);
-        })
-        .catch(err => console.error("データ取得エラー:", err));
-    }
+function loadKitchenData() {
+  fetch(`${CONFIG.GAS_URL}?mode=kitchen&_t=${Date.now()}`)
+    .then(res => res.json())
+    .then(data => {
+      // 開発者ツールのコンソールにレスポンス構造を出力（確認用）
+      console.log("厨房データ受信:", data);
 
-    // メニューセレクトボックス（口頭注文・品切れ共通）の更新
-    function updateMenuSelects(menus) {
-      const oralSelect = document.getElementById('oral-menu');
-      const soldoutSelect = document.getElementById('soldout-menu');
-      
-      const currentOral = oralSelect.value;
-      const currentSoldout = soldoutSelect.value;
+      // menus または menuList や items など、様々なキーに対応
+      const menusList = data.menus || data.menuList || data.items || [];
 
-      oralSelect.innerHTML = '<option value="">メニューを選択...</option>';
-      soldoutSelect.innerHTML = '<option value="">メニューを選択...</option>';
-
-      menus.forEach(m => {
-        // ID・名前・価格のプロパティ表記ゆれに対応
-        const id = m.menu_id || m.menuId || m.id;
-        const name = m.name || m.menuName || '名称未設定';
-        const price = m.price !== undefined ? `${m.price}円` : '';
-        const isSoldOut = m.is_sold_out || m.soldOut || false;
-
-        // 口頭注文用
-        const optOral = document.createElement('option');
-        optOral.value = id;
-        optOral.textContent = `${name} (${price})${isSoldOut ? ' [品切れ中]' : ''}`;
-        oralSelect.appendChild(optOral);
-
-        // 品切れ切替用
-        const optSoldout = document.createElement('option');
-        optSoldout.value = id;
-        optSoldout.dataset.isSoldOut = isSoldOut;
-        optSoldout.textContent = `${isSoldOut ? '【品切れ中】' : '【販売中】'} ${name}`;
-        soldoutSelect.appendChild(optSoldout);
-      });
-
-      oralSelect.value = currentOral;
-      soldoutSelect.value = currentSoldout;
-    }
-
-    function renderOrders(orders) {
-      const grid = document.getElementById('order-grid');
-      grid.innerHTML = '';
-
-      const activeOrders = orders.filter(order => {
-        const st = String(order.status || '').trim();
-        return !(st.includes('提供') || st === '完了' || st === 'キャンセル' || st === '削除' || st === '会計済');
-      });
-
-      if (activeOrders.length === 0) {
-        grid.innerHTML = '<p style="color:#aaa; grid-column: 1/-1; text-align:center; padding: 40px 0;">現在、未対応の注文はありません。</p>';
-        return;
+      if (Array.isArray(menusList) && menusList.length > 0) {
+        allMenusCache = menusList;
+        updateMenuSelects(menusList);
+      } else {
+        console.warn("メニューデータが空または取得できませんでした:", data);
       }
 
-      activeOrders.forEach(order => {
-        const card = document.createElement('div');
-        const isCheckout = (order.status === '会計要請');
-        card.className = `order-card ${isCheckout ? 'checkout-req' : ''}`;
-        card.dataset.orderId = order.orderId;
-        card.dataset.menuName = order.menuName;
+      renderOrders(data.orders || data.orderList || []);
+    })
+    .catch(err => console.error("データ取得エラー:", err));
+}
 
-        const displayName = formatTableName(order.tableId);
+// メニューセレクトボックス（口頭注文・品切れ共通）の更新
+function updateMenuSelects(menus) {
+  const oralSelect = document.getElementById('oral-menu');
+  const soldoutSelect = document.getElementById('soldout-menu');
+  
+  if (!oralSelect || !soldoutSelect) return;
 
-        let actionBtns = '';
-        if (isCheckout) {
-          actionBtns = `<div style="color:#e91e63; font-weight:bold; text-align:center; padding:10px; font-size:1.2rem;">🚶‍♂️ お会計の呼び出し</div>`;
-        } else {
-          actionBtns = `
-            <div class="btn-group">
-              <button class="btn btn-done" onclick="updateStatus('${escapeHtml(order.orderId)}', '提供済')">提供済</button>
-              <button class="btn btn-cancel" onclick="updateStatus('${escapeHtml(order.orderId)}', 'キャンセル')">取消</button>
-            </div>
-          `;
-        }
+  const currentOral = oralSelect.value;
+  const currentSoldout = soldoutSelect.value;
 
-        card.innerHTML = `
-          <div class="card-header">
-            <span class="table-badge">${escapeHtml(displayName)}</span>
-            <span class="order-time">${escapeHtml(order.time)}</span>
-          </div>
-          <div class="menu-name">${escapeHtml(order.menuName)}</div>
-          <div class="menu-qty">× ${escapeHtml(order.quantity)}</div>
-          ${actionBtns}
-        `;
-        grid.appendChild(card);
-      });
+  oralSelect.innerHTML = '<option value="">メニューを選択...</option>';
+  soldoutSelect.innerHTML = '<option value="">メニューを選択...</option>';
+
+  menus.forEach(m => {
+    // IDの表記揺れを吸収 (menu_id, menuId, id)
+    const id = m.menu_id ?? m.menuId ?? m.id;
+    // 名前の表記揺れを吸収 (name, menu_name, menuName)
+    const name = m.name ?? m.menu_name ?? m.menuName ?? '名称未設定';
+    // 価格の表記揺れを吸収
+    const price = (m.price !== undefined && m.price !== '') ? `${m.price}円` : '';
+    
+    // 品切れフラグの表記揺れを吸収 (is_sold_out, is_out_of_stock, isSoldOut, outOfStock)
+    const isSoldOut = Boolean(
+      m.is_sold_out || 
+      m.is_out_of_stock || 
+      m.isSoldOut || 
+      m.outOfStock || 
+      m.sold_out
+    );
+
+    if (!id) return; // IDがない要素はスキップ
+
+    // 口頭注文用オプショングループ
+    const optOral = document.createElement('option');
+    optOral.value = id;
+    optOral.textContent = `${name} ${price ? `(${price})` : ''}${isSoldOut ? ' [品切れ中]' : ''}`;
+    oralSelect.appendChild(optOral);
+
+    // 品切れ切替用オプショングループ
+    const optSoldout = document.createElement('option');
+    optSoldout.value = id;
+    optSoldout.dataset.isSoldOut = isSoldOut ? 'true' : 'false';
+    optSoldout.textContent = `${isSoldOut ? '【品切れ中】' : '【販売中】'} ${name}`;
+    soldoutSelect.appendChild(optSoldout);
+  });
+
+  oralSelect.value = currentOral;
+  soldoutSelect.value = currentSoldout;
+}
+
+function renderOrders(orders) {
+  const grid = document.getElementById('order-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const activeOrders = orders.filter(order => {
+    const st = String(order.status || '').trim();
+    return !(st.includes('提供') || st === '完了' || st === 'キャンセル' || st === '削除' || st === '会計済');
+  });
+
+  if (activeOrders.length === 0) {
+    grid.innerHTML = '<p style="color:#aaa; grid-column: 1/-1; text-align:center; padding: 40px 0;">現在、未対応の注文はありません。</p>';
+    return;
+  }
+
+  activeOrders.forEach(order => {
+    const card = document.createElement('div');
+    const isCheckout = (order.status === '会計要請');
+    card.className = `order-card ${isCheckout ? 'checkout-req' : ''}`;
+    card.dataset.orderId = order.orderId;
+    card.dataset.menuName = order.menuName;
+
+    const displayName = formatTableName(order.tableId);
+
+    let actionBtns = '';
+    if (isCheckout) {
+      actionBtns = `<div style="color:#e91e63; font-weight:bold; text-align:center; padding:10px; font-size:1.2rem;">🚶‍♂️ お会計の呼び出し</div>`;
+    } else {
+      actionBtns = `
+        <div class="btn-group">
+          <button class="btn btn-done" onclick="updateStatus('${escapeHtml(order.orderId)}', '提供済')">提供済</button>
+          <button class="btn btn-cancel" onclick="updateStatus('${escapeHtml(order.orderId)}', 'キャンセル')">取消</button>
+        </div>
+      `;
     }
+
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="table-badge">${escapeHtml(displayName)}</span>
+        <span class="order-time">${escapeHtml(order.time)}</span>
+      </div>
+      <div class="menu-name">${escapeHtml(order.menuName)}</div>
+      <div class="menu-qty">× ${escapeHtml(order.quantity)}</div>
+      ${actionBtns}
+    `;
+    grid.appendChild(card);
+  });
+}
 
     function updateStatus(orderId, status) {
       const params = new URLSearchParams();
