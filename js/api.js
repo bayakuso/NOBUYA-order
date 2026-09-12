@@ -14,9 +14,15 @@ async function apiFetchMenus() {
   return await response.json();
 }
 
-// 2. 会計済みのインデックスを取得する
+// 2. 会計済みのインデックスを取得する（修正: redirect オプションを追加）
 async function apiFetchCheckoutIndex(tableId) {
-  const res = await fetch(`${CONFIG.GAS_URL}?mode=kitchen&action=history&tableId=${encodeURIComponent(tableId)}`);
+  const res = await fetch(`${CONFIG.GAS_URL}?mode=kitchen&action=history&tableId=${encodeURIComponent(tableId)}`, {
+    method: "GET",
+    redirect: "follow"
+  });
+  if (!res.ok) {
+    throw new Error(`HTTPエラー: ${res.status}`);
+  }
   return await res.json();
 }
 
@@ -53,12 +59,24 @@ async function apiSendBulkOrder(tableId, cart) {
 // 5. お会計要請を送信する
 async function apiRequestCheckout(tableId) {
   const postUrl = `${CONFIG.GAS_URL}?action=checkout&tableId=${encodeURIComponent(tableId)}`;
-  const response = await fetch(postUrl, { method: 'POST' });
+  const response = await fetch(postUrl, { 
+    method: 'POST',
+    redirect: 'follow'
+  });
+  if (!response.ok) {
+    throw new Error(`HTTPエラー: ${response.status}`);
+  }
   return await response.json();
 }
 
-// 6. 卓の状態を定期チェック監視する
+// 6. 卓の状態を定期チェック監視する（修正: redirect オプションを追加）
 async function apiCheckStatus(tableId) {
-  const res = await fetch(`${CONFIG.GAS_URL}?mode=kitchen&action=history&tableId=${encodeURIComponent(tableId)}`);
+  const res = await fetch(`${CONFIG.GAS_URL}?mode=kitchen&action=history&tableId=${encodeURIComponent(tableId)}`, {
+    method: "GET",
+    redirect: "follow"
+  });
+  if (!res.ok) {
+    throw new Error(`HTTPエラー: ${res.status}`);
+  }
   return await res.json();
 }
