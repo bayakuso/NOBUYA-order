@@ -25,6 +25,7 @@
     .oral-form { display: flex; gap: 10px; flex-wrap: wrap; }
     .oral-form select, .oral-form input { padding: 8px; font-size: 1rem; border-radius: 4px; border: 1px solid #555; background: #333; color: #fff; }
     .btn-add { background: #2196f3; color: white; border: none; padding: 8px 16px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    .btn-add:disabled, .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   </style>
 </head>
 <body>
@@ -60,7 +61,7 @@
         <option value="">メニューを選択...</option>
       </select>
       <input type="number" id="oral-qty" value="1" min="1" max="10" style="width: 60px;">
-      <button class="btn-add" onclick="submitOralOrder()">注文追加</button>
+      <button class="btn-add" id="btn-submit-oral" onclick="submitOralOrder()">注文追加</button>
     </div>
   </div>
 
@@ -77,6 +78,16 @@
       setInterval(loadKitchenData, CONFIG.REFRESH_INTERVAL);
     };
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function formatTableName(tableId) {
       if (!tableId) return '未設定';
       const cleanId = String(tableId).trim();
@@ -90,18 +101,17 @@
     }
 
     function loadKitchenData() {
-  // 末尾にタイムスタンプを付与してキャッシュを回避
-  fetch(`${CONFIG.GAS_URL}?mode=kitchen&_t=${Date.now()}`)
-    .then(res => res.json())
-    .then(data => {
-      if (data.menus) {
-        allMenusCache = data.menus;
-        updateOralMenuSelect(data.menus);
-      }
-      renderOrders(data.orders || []);
-    })
-    .catch(err => console.error("データ取得エラー:", err));
-}
+      fetch(`${CONFIG.GAS_URL}?mode=kitchen&_t=${Date.now()}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.menus) {
+            allMenusCache = data.menus;
+            updateOralMenuSelect(data.menus);
+          }
+          renderOrders(data.orders || []);
+        })
+        .catch(err => console.error("データ取得エラー:", err));
+    }
 
     function updateOralMenuSelect(menus) {
       const select = document.getElementById('oral-menu');
@@ -120,7 +130,6 @@
       const grid = document.getElementById('order-grid');
       grid.innerHTML = '';
 
-      // 提供済み・完了・キャンセル・会計済みの注文を除外（未対応・調理中・受付・会計要請のみ表示）
       const activeOrders = orders.filter(order => {
         const st = String(order.status || '').trim();
         return !(st.includes('提供') || st === '完了' || st === 'キャンセル' || st === '削除' || st === '会計済');
@@ -135,6 +144,8 @@
         const card = document.createElement('div');
         const isCheckout = (order.status === '会計要請');
         card.className = `order-card ${isCheckout ? 'checkout-req' : ''}`;
+        card.dataset.orderId = order.orderId;
+        card.dataset.menuName = order.menuName;
 
         const displayName = formatTableName(order.tableId);
 
@@ -144,27 +155,30 @@
         } else {
           actionBtns = `
             <div class="btn-group">
-              <button class="btn btn-done" onclick="updateStatus('${order.orderId}', '提供済', '${order.menuName}')">提供済</button>
-              <button class="btn btn-cancel" onclick="updateStatus('${order.orderId}', 'キャンセル', '${order.menuName}')">取消</button>
+              <button class="btn btn-done" onclick="updateStatus('${escapeHtml(order.orderId)}', '提供済')">提供済</button>
+              <button class="btn btn-cancel" onclick="updateStatus('${escapeHtml(order.orderId)}', 'キャンセル')">取消</button>
             </div>
           `;
         }
 
         card.innerHTML = `
           <div class="card-header">
-            <span class="table-badge">${displayName}</span>
-            <span class="order-time">${order.time}</span>
+            <span class="table-badge">${escapeHtml(displayName)}</span>
+            <span class="order-time">${escapeHtml(order.time)}</span>
           </div>
-          <div class="menu-name">${order.menuName}</div>
-          <div class="menu-qty">× ${order.quantity}</div>
+          <div class="menu-name">${escapeHtml(order.menuName)}</div>
+          <div class="menu-qty">× ${escapeHtml(order.quantity)}</div>
           ${actionBtns}
         `;
         grid.appendChild(card);
       });
     }
 
-    function updateStatus(orderId, status, menuName) {
-      if(!confirm(`【${menuName}】を「${status}」にしますか？`)) return;
+    function updateStatus(orderId, status) {
+      const card = document.querySelector(`.order-card[data-order-id="${orderId}"]`);
+      const menuName = card ? card.dataset.menuName : '注文';
+
+      if (!confirm(`【${menuName}】を「${status}」にしますか？`)) return;
 
       const params = new URLSearchParams();
       params.append('action', 'update_status');
@@ -178,7 +192,7 @@
       })
       .then(res => res.json())
       .then(res => {
-        if(res.status === 'success') {
+        if (res.status === 'success') {
           loadKitchenData();
         } else {
           alert("エラー: " + res.message);
@@ -191,11 +205,14 @@
       const tableId = document.getElementById('oral-table').value;
       const menuId = document.getElementById('oral-menu').value;
       const quantity = document.getElementById('oral-qty').value;
+      const btn = document.getElementById('btn-submit-oral');
 
       if (!menuId) {
         alert("メニューを選択してください。");
         return;
       }
+
+      btn.disabled = true;
 
       const params = new URLSearchParams();
       params.append('tableId', tableId);
@@ -209,18 +226,20 @@
       })
       .then(res => res.json())
       .then(res => {
-        if(res.status === 'success') {
+        if (res.status === 'success') {
           alert("口頭注文を追加しました。");
+          document.getElementById('oral-menu').value = '';
+          document.getElementById('oral-qty').value = '1';
           loadKitchenData();
         } else {
           alert("エラー: " + res.message);
         }
       })
-      .catch(err => alert("通信に失敗しました。"));
+      .catch(err => alert("通信に失敗しました。"))
+      .finally(() => {
+        btn.disabled = false;
+      });
     }
-  </script>
-</body>
-</html>
   </script>
 </body>
 </html>
