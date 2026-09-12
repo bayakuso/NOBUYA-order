@@ -24,8 +24,7 @@ function parseTimeToMinutes(timeStr) {
 
 // ヘッダー情報ステータスバッジ更新
 function updateHeaderStatusBadges() {
-  if (typeof urlParams === 'undefined') return;
-
+  const urlParams = new URLSearchParams(window.location.search);
   const num = urlParams.get('num');
   const time = urlParams.get('time');
 
@@ -48,49 +47,34 @@ function updateHeaderStatusBadges() {
   }
 }
 
-// 来店人数入力確定モーダル処理（確定後の画面遷移・モーダル閉鎖を確実化）
+// 来店人数入力確定モーダル処理（確定後の画面遷移・モーダル全消去の確実化）
 function submitModalQty() {
   const countEl = document.getElementById('modal-guest-count');
   const guestCount = countEl ? countEl.value : "1";
   const now = new Date(); 
   const timeStr = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
   
-  if (typeof urlParams !== 'undefined') {
-    urlParams.set('num', guestCount); 
-    urlParams.set('time', timeStr);
-    window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
-  }
+  const urlParams = new URLSearchParams(window.location.search);
+  urlParams.set('num', guestCount); 
+  urlParams.set('time', timeStr);
+  window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
   
   updateHeaderStatusBadges();
 
-  // モーダルおよび関連要素の非表示（CSS表示制御とクラス制御を同時適用）
+  // モーダル本体とすべてのオーバーレイ要素を確実に削除・非表示化
   const custModal = document.getElementById('customer-modal');
   if (custModal) {
-    custModal.style.display = 'none';
+    custModal.style.setProperty('display', 'none', 'important');
     custModal.classList.remove('active', 'show');
   }
 
-  // 汎用モーダル背景・オーバーレイの非表示処理
-  const modalOverlays = document.querySelectorAll('.modal, .modal-overlay, .overlay, #modal-overlay');
-  modalOverlays.forEach(overlay => {
-    if (overlay.id === 'customer-modal' || overlay.classList.contains('customer-modal')) {
-      overlay.style.display = 'none';
-      overlay.classList.remove('active', 'show');
-    }
-  });
-
-  // closeModal関数が存在する場合は安全に呼び出し
+  // closeModal 関数がある場合は安全に実行
   if (typeof closeModal === 'function') {
     try {
       closeModal('customer-modal');
     } catch (e) {
-      console.warn("closeModal実行時のマイナーエラー（非表示処理は完了済）:", e);
+      console.warn("closeModal実行補助:", e);
     }
-  }
-
-  // フルスクリーン化・画面描画補助関数が存在する場合は実行
-  if (typeof triggerMobileFullscreen === 'function') {
-    triggerMobileFullscreen();
   }
 }
 
@@ -210,7 +194,11 @@ async function loadAndRenderMenu() {
       tableEl.innerText = tableId;
     }
 
-    if (typeof isViewer !== 'undefined' && isViewer) {
+    // viewer (スマホ連携モード等) 判定
+    const urlParams = new URLSearchParams(window.location.search);
+    const isViewer = urlParams.get('view') === 'true';
+
+    if (isViewer) {
       const linkArea = document.getElementById('header-link-area');
       const custModal = document.getElementById('customer-modal');
       if (linkArea) linkArea.style.display = 'block';
