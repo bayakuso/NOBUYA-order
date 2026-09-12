@@ -48,6 +48,52 @@ function updateHeaderStatusBadges() {
   }
 }
 
+// 来店人数入力確定モーダル処理（確定後の画面遷移・モーダル閉鎖を確実化）
+function submitModalQty() {
+  const countEl = document.getElementById('modal-guest-count');
+  const guestCount = countEl ? countEl.value : "1";
+  const now = new Date(); 
+  const timeStr = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+  
+  if (typeof urlParams !== 'undefined') {
+    urlParams.set('num', guestCount); 
+    urlParams.set('time', timeStr);
+    window.history.replaceState({}, '', `${window.location.pathname}?${urlParams.toString()}`);
+  }
+  
+  updateHeaderStatusBadges();
+
+  // モーダルおよび関連要素の非表示（CSS表示制御とクラス制御を同時適用）
+  const custModal = document.getElementById('customer-modal');
+  if (custModal) {
+    custModal.style.display = 'none';
+    custModal.classList.remove('active', 'show');
+  }
+
+  // 汎用モーダル背景・オーバーレイの非表示処理
+  const modalOverlays = document.querySelectorAll('.modal, .modal-overlay, .overlay, #modal-overlay');
+  modalOverlays.forEach(overlay => {
+    if (overlay.id === 'customer-modal' || overlay.classList.contains('customer-modal')) {
+      overlay.style.display = 'none';
+      overlay.classList.remove('active', 'show');
+    }
+  });
+
+  // closeModal関数が存在する場合は安全に呼び出し
+  if (typeof closeModal === 'function') {
+    try {
+      closeModal('customer-modal');
+    } catch (e) {
+      console.warn("closeModal実行時のマイナーエラー（非表示処理は完了済）:", e);
+    }
+  }
+
+  // フルスクリーン化・画面描画補助関数が存在する場合は実行
+  if (typeof triggerMobileFullscreen === 'function') {
+    triggerMobileFullscreen();
+  }
+}
+
 // モバイル向けスワイプジェスチャー設定
 function setupSwipeEvents() {
   const menuList = document.getElementById('menu-list');
