@@ -16,6 +16,12 @@
     .admin-form { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .admin-form select, .admin-form input { padding: 8px; font-size: 1rem; border-radius: 4px; border: 1px solid #555; background: #333; color: #fff; }
 
+    /* 品切れ一覧表示用スタイル */
+    .soldout-list-container { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #555; }
+    .soldout-list-title { font-size: 0.85rem; color: #ffb74d; font-weight: bold; margin-bottom: 6px; }
+    .soldout-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .soldout-tag { background: #d32f2f; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; display: flex; align-items: center; gap: 4px; }
+
     .order-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 20px; }
     .order-card { background-color: #1e1e1e; border-radius: 8px; border-left: 6px solid #ff9800; padding: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); position: relative; }
     .order-card.checkout-req { border-left-color: #e91e63; background-color: #2c121a; }
@@ -81,6 +87,13 @@
         </select>
         <button class="btn-soldout" id="btn-toggle-soldout" onclick="toggleSoldOut()">状態を切替</button>
       </div>
+      <!-- 現在の品切れメニュー視覚化領域 -->
+      <div class="soldout-list-container">
+        <div class="soldout-list-title">現在品切れ中の商品:</div>
+        <div class="soldout-tags" id="soldout-tags-area">
+          <span style="font-size:0.8rem; color:#888;">なし</span>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -91,6 +104,9 @@
   <script src="js/config.js"></script>
   <script>
 let allMenusCache = [];
+
+// 他タブ・注文アプリとのトリガー通信用 BroadcastChannel
+const kitchenChannel = new BroadcastChannel('kitchen_inventory_channel');
 
 window.onload = () => {
   loadKitchenData();
@@ -119,10 +135,8 @@ function loadKitchenData() {
   fetch(`${CONFIG.GAS_URL}?mode=kitchen&_t=${Date.now()}`)
     .then(res => res.json())
     .then(data => {
-      // 開発者ツールのコンソールにレスポンス構造を出力（確認用）
       console.log("厨房データ受信:", data);
 
-      // menus または menuList や items など、様々なキーに対応
       const menusList = data.menus || data.menuList || data.items || [];
 
       if (Array.isArray(menusList) && menusList.length > 0) {
@@ -137,10 +151,11 @@ function loadKitchenData() {
     .catch(err => console.error("データ取得エラー:", err));
 }
 
-// 厨房モニター HTML内：メニューセレクトボックスの更新
+// 厨房モニター HTML内：メニューセレクトボックスおよび品切れ中タグの更新
 function updateMenuSelects(menus) {
   const oralSelect = document.getElementById('oral-menu');
   const soldoutSelect = document.getElementById('soldout-menu');
+  const soldoutTagsArea = document.getElementById('soldout-tags-area');
   
   if (!oralSelect || !soldoutSelect) return;
 
@@ -150,15 +165,15 @@ function updateMenuSelects(menus) {
   oralSelect.innerHTML = '<option value="">メニューを選択...</option>';
   soldoutSelect.innerHTML = '<option value="">メニューを選択...</option>';
 
-  // カテゴリーごとにメニューをグループ化
   const groupedMenus = {};
+  const soldOutItems = []; // 品切れアイテムの一覧保持
+
   menus.forEach(m => {
     const cat = m.category || m.category_name || 'その他';
     if (!groupedMenus[cat]) groupedMenus[cat] = [];
     groupedMenus[cat].push(m);
   });
 
-  // グループごとに <optgroup> を生成
   Object.keys(groupedMenus).forEach(cat => {
     const optGroupOral = document.createElement('optgroup');
     optGroupOral.label = `--- ${cat} ---`;
@@ -171,10 +186,14 @@ function updateMenuSelects(menus) {
       const name = m.name ?? m.menu_name ?? m.menuName ?? '名称未設定';
       const price = (m.price !== undefined && m.price !== '') ? `${m.price}円` : '';
       const isSoldOut = Boolean(
-        m.is_sold_out || m.is_out_of_stock || m.isSoldOut || m.outOfStock || m.sold_out
+        m.is_sold_out || m.is_out_of_stock || m.isSoldOut || m.outOfStock || m.sold_out || m.is_soldout
       );
 
       if (!id) return;
+
+      if (isSoldOut) {
+        soldOutItems.push(name);
+      }
 
       // 口頭注文用
       const optOral = document.createElement('option');
@@ -196,6 +215,17 @@ function updateMenuSelects(menus) {
 
   oralSelect.value = currentOral;
   soldoutSelect.value = currentSoldout;
+
+  // 品切れ中一覧の画面表示描画
+  if (soldoutTagsArea) {
+    if (soldOutItems.length > 0) {
+      soldoutTagsArea.innerHTML = soldOutItems.map(name => `
+        <span class="soldout-tag">🚫 ${escapeHtml(name)}</span>
+      `).join('');
+    } else {
+      soldoutTagsArea.innerHTML = '<span style="font-size:0.8rem; color:#888;">なし (全商品販売中)</span>';
+    }
+  }
 }
 
 function renderOrders(orders) {
@@ -247,70 +277,70 @@ function renderOrders(orders) {
   });
 }
 
-    function updateStatus(orderId, status) {
-      const params = new URLSearchParams();
-      params.append('action', 'update_status');
-      params.append('orderId', orderId);
-      params.append('status', status);
+function updateStatus(orderId, status) {
+  const params = new URLSearchParams();
+  params.append('action', 'update_status');
+  params.append('orderId', orderId);
+  params.append('status', status);
 
-      fetch(CONFIG.GAS_URL, {
-        method: 'POST',
-        body: params,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      })
-      .then(res => res.json())
-      .then(res => {
-        if (res.status === 'success') {
-          showToast(`${status}に更新しました`);
-          loadKitchenData();
-        } else {
-          showToast("エラー: " + res.message, true);
-        }
-      })
-      .catch(err => showToast("通信に失敗しました", true));
+  fetch(CONFIG.GAS_URL, {
+    method: 'POST',
+    body: params,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  })
+  .then(res => res.json())
+  .then(res => {
+    if (res.status === 'success') {
+      showToast(`${status}に更新しました`);
+      loadKitchenData();
+    } else {
+      showToast("エラー: " + res.message, true);
     }
+  })
+  .catch(err => showToast("通信に失敗しました", true));
+}
 
-    function submitOralOrder() {
-      const tableId = document.getElementById('oral-table').value;
-      const menuId = document.getElementById('oral-menu').value;
-      const quantity = document.getElementById('oral-qty').value;
-      const btn = document.getElementById('btn-submit-oral');
+function submitOralOrder() {
+  const tableId = document.getElementById('oral-table').value;
+  const menuId = document.getElementById('oral-menu').value;
+  const quantity = document.getElementById('oral-qty').value;
+  const btn = document.getElementById('btn-submit-oral');
 
-      if (!menuId) {
-        showToast("メニューを選択してください", true);
-        return;
-      }
+  if (!menuId) {
+    showToast("メニューを選択してください", true);
+    return;
+  }
 
-      btn.disabled = true;
+  btn.disabled = true;
 
-      const params = new URLSearchParams();
-      params.append('tableId', tableId);
-      params.append('menuId', menuId);
-      params.append('quantity', quantity);
+  const params = new URLSearchParams();
+  params.append('tableId', tableId);
+  params.append('menuId', menuId);
+  params.append('quantity', quantity);
 
-      fetch(CONFIG.GAS_URL, {
-        method: 'POST',
-        body: params,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      })
-      .then(res => res.json())
-      .then(res => {
-        if (res.status === 'success') {
-          showToast("口頭注文を追加しました");
-          document.getElementById('oral-menu').value = '';
-          document.getElementById('oral-qty').value = '1';
-          loadKitchenData();
-        } else {
-          showToast("エラー: " + res.message, true);
-        }
-      })
-      .catch(err => showToast("通信に失敗しました", true))
-      .finally(() => {
-        btn.disabled = false;
-      });
+  fetch(CONFIG.GAS_URL, {
+    method: 'POST',
+    body: params,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  })
+  .then(res => res.json())
+  .then(res => {
+    if (res.status === 'success') {
+      showToast("口頭注文を追加しました");
+      document.getElementById('oral-menu').value = '';
+      document.getElementById('oral-qty').value = '1';
+      loadKitchenData();
+    } else {
+      showToast("エラー: " + res.message, true);
     }
+  })
+  .catch(err => showToast("通信に失敗しました", true))
+  .finally(() => {
+    btn.disabled = false;
+  });
+}
 
-    // 品切れ状態の切り替え関数
+// 品切れ状態の切り替え関数（注文アプリへのトリガー送信機能追加版）
 function toggleSoldOut() {
   const select = document.getElementById('soldout-menu');
   const menuId = select.value;
@@ -341,7 +371,21 @@ function toggleSoldOut() {
   .then(res => {
     if (res.status === 'success') {
       showToast(newStatus ? "品切れに設定しました" : "販売を再開しました");
+      
+      // 1. 厨房側のデータ再ロード
       loadKitchenData();
+
+      // 2. 注文アプリ側へ即時反映トリガーを通知 (BroadcastChannel + localStorage)
+      const eventData = {
+        type: 'INVENTORY_UPDATED',
+        menuId: menuId,
+        isSoldOut: newStatus,
+        timestamp: Date.now()
+      };
+      
+      kitchenChannel.postMessage(eventData);
+      localStorage.setItem('kitchen_inventory_trigger', JSON.stringify(eventData));
+
     } else {
       showToast("エラー: " + res.message, true);
     }
@@ -351,38 +395,39 @@ function toggleSoldOut() {
     btn.disabled = false;
   });
 }
-    // トースト通知関数
-    function showToast(message, isError = false) {
-      const existing = document.getElementById("toast-popup");
-      if (existing) existing.remove();
 
-      const toast = document.createElement("div");
-      toast.id = "toast-popup";
-      toast.innerText = message;
-      
-      Object.assign(toast.style, {
-        position: "fixed",
-        bottom: "30px",
-        left: "50%",
-        transform: "translateX(-50%)",
-        backgroundColor: isError ? "#f44336" : "#4caf50",
-        color: "#ffffff",
-        padding: "14px 28px",
-        borderRadius: "8px",
-        fontSize: "1.2rem",
-        fontWeight: "bold",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
-        zIndex: "9999",
-        transition: "opacity 0.3s ease"
-      });
+// トースト通知関数
+function showToast(message, isError = false) {
+  const existing = document.getElementById("toast-popup");
+  if (existing) existing.remove();
 
-      document.body.appendChild(toast);
+  const toast = document.createElement("div");
+  toast.id = "toast-popup";
+  toast.innerText = message;
+  
+  Object.assign(toast.style, {
+    position: "fixed",
+    bottom: "30px",
+    left: "50%",
+    transform: "translateX(-50%)",
+    backgroundColor: isError ? "#f44336" : "#4caf50",
+    color: "#ffffff",
+    padding: "14px 28px",
+    borderRadius: "8px",
+    fontSize: "1.2rem",
+    fontWeight: "bold",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+    zIndex: "9999",
+    transition: "opacity 0.3s ease"
+  });
 
-      setTimeout(() => {
-        toast.style.opacity = "0";
-        setTimeout(() => toast.remove(), 300);
-      }, 1500);
-    }
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => toast.remove(), 300);
+  }, 1500);
+}
   </script>
 </body>
 </html>
