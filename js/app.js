@@ -179,6 +179,56 @@ async function loadAndRenderMenu() {
   }
 }
 
+// ======================================
+// 厨房モニター連携・リアルタイム品切れ更新リスナー
+// ======================================
+function applyInventoryUpdate(menuId, isSoldOut) {
+  if (typeof state === 'undefined' || !state.allMenus) return;
+
+  const targetMenu = state.allMenus.find(m => String(m.menu_id ?? m.menuId ?? m.id) === String(menuId));
+  if (targetMenu) {
+    // 品切れ状態プロパティの更新
+    targetMenu.is_sold_out = isSoldOut;
+    targetMenu.is_out_of_stock = isSoldOut;
+    targetMenu.isSoldOut = isSoldOut;
+    targetMenu.sold_out = isSoldOut;
+
+    // 現在選択中のカテゴリであれば画面を即時再描画
+    if (typeof renderMenuList === 'function') {
+      renderMenuList();
+    }
+  } else {
+    // キャッシュ内に該当IDがない場合はバックグラウンドで全再取得
+    loadAndRenderMenu();
+  }
+}
+
+// 1. BroadcastChannel 通知リスナー
+try {
+  const kitchenChannel = new BroadcastChannel('kitchen_inventory_channel');
+  kitchenChannel.onmessage = (event) => {
+    if (event.data && event.data.type === 'INVENTORY_UPDATED') {
+      applyInventoryUpdate(event.data.menuId, event.data.isSoldOut);
+    }
+  };
+} catch (e) {
+  console.warn("BroadcastChannel 非対応環境です:", e);
+}
+
+// 2. localStorage 変更イベントリスナー（フォールバック検知）
+window.addEventListener('storage', (event) => {
+  if (event.key === 'kitchen_inventory_trigger' && event.newValue) {
+    try {
+      const data = JSON.parse(event.newValue);
+      if (data && data.type === 'INVENTORY_UPDATED') {
+        applyInventoryUpdate(data.menuId, data.isSoldOut);
+      }
+    } catch (e) {
+      console.error("StorageEvent解析エラー:", e);
+    }
+  }
+});
+
 // アプリ初期化実行
 (async function initApp() {
   // 1. メニューをバックグラウンド・画面裏で描画完了させる
