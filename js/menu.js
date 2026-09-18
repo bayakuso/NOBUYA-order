@@ -69,14 +69,14 @@ function renderMenuList() {
   listContainer.style.opacity = 0;
   
   filtered.forEach(item => {
-    // 品切れフラグの判定（表記揺れ・型揺れを吸収）
+    // 品切れフラグの判定（表記揺れ・型揺れ[Boolean, Number, String]を網羅的に吸収）
+    const rawSold = item.is_sold_out ?? item.is_out_of_stock ?? item.isSoldOut ?? item.outOfStock ?? item.sold_out ?? item.is_soldout;
     const isSoldOut = Boolean(
-      item.is_sold_out || 
-      item.is_out_of_stock || 
-      item.isSoldOut || 
-      item.outOfStock || 
-      item.sold_out === true || 
-      item.sold_out === 'true'
+      rawSold === true ||
+      rawSold === 1 ||
+      String(rawSold).toLowerCase() === 'true' ||
+      String(rawSold) === '1' ||
+      String(rawSold) === '品切れ'
     );
 
     const card = document.createElement('div');
@@ -92,7 +92,7 @@ function renderMenuList() {
     let buttonAreaHtml = '';
 
     if (isSoldOut) {
-      // 品切れ時は操作ボタンを非表示化（CSSの ::after で「本日品切れ」が表示されます）
+      // 品切れ時は操作ボタンを非表示化（CSSの ::after 等で「本日品切れ」が表示されます）
       buttonAreaHtml = `<button class="add-cart-btn" disabled style="visibility:hidden;">品切れ</button>`;
     } else if (rawOptionValue && String(rawOptionValue).trim() !== '') {
       item.options = String(rawOptionValue).trim();
