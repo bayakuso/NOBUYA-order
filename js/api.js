@@ -51,7 +51,7 @@ async function apiFetchHistory(tableId) {
 }
 
 // 4. カートの一括注文を送信する
-async function apiSendBulkOrder(tableId, cart) {
+async function apiSendBulkOrder(tableId, cart, people) {
   const postUrl = `${CONFIG.GAS_URL}?action=bulk_order&tableId=${encodeURIComponent(tableId)}`;
   
   const response = await fetch(postUrl, {
@@ -60,7 +60,10 @@ async function apiSendBulkOrder(tableId, cart) {
     headers: {
       'Content-Type': 'text/plain;charset=utf-8'
     },
-    body: JSON.stringify({ cart: cart })
+    body: JSON.stringify({ 
+      cart: cart,
+      people: people // ★ 人数データを取り込んで送信
+    })
   });
   
   if (!response.ok) {
