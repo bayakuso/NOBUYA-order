@@ -110,11 +110,21 @@ async function sendBulkOrder() {
   }
 
   try {
-    // 人数データを取得（state構造に合わせて優先順で取得）
-    const peopleCount = state.guestCount || state.people || state.partySize || guestCount || 1;
+    // 卓IDの安全な取得（stateオブジェクトまたはグローバル変数から取得）
+    const currentTableId = (typeof state !== 'undefined' && state.tableId) 
+      ? state.tableId 
+      : (typeof tableId !== 'undefined' ? tableId : "A");
 
-    // ★修正箇所：第3引数に人数（peopleCount）を追加して送信
-    const result = await apiSendBulkOrder(tableId, state.cart, peopleCount);
+    // 人数データの安全な取得
+    let peopleCount = 1;
+    if (typeof state !== 'undefined') {
+      peopleCount = state.guestCount || state.people || state.partySize || state.guests || 1;
+    } else if (typeof guestCount !== 'undefined') {
+      peopleCount = guestCount;
+    }
+
+    // apiSendBulkOrder の呼び出し
+    const result = await apiSendBulkOrder(currentTableId, state.cart, peopleCount);
     
     if (result && result.status === 'success') {
       if (typeof showCustomToast === 'function') {
@@ -134,12 +144,12 @@ async function sendBulkOrder() {
       }
     }
   } catch (err) {
-    console.error("注文送信エラー:", err);
+    console.error("注文送信エラー詳細:", err);
     if (typeof showCustomToast === 'function') {
-      showCustomToast(false, '通信失敗', 'ネットワーク環境をご確認ください。');
+      showCustomToast(false, '通信失敗', 'エラー詳細: ' + err.message);
     }
   } finally {
-    // ★重要：成功・失敗・モーダル閉鎖を問わず、ボタンテキストを「注文を確定する」に戻す
+    // ボタン表示のリセット
     if (btn) {
       btn.innerText = "注文を確定する";
       btn.disabled = (state.cart.length === 0);
