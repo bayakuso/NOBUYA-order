@@ -56,13 +56,14 @@ async function apiSendBulkOrder(tableId, cart, people) {
   
   const response = await fetch(postUrl, {
     method: 'POST',
+    mode: 'cors',                  // ★ 明示的に cors を指定
     redirect: 'follow',
     headers: {
-      'Content-Type': 'text/plain;charset=utf-8'
+      'Content-Type': 'text/plain;charset=utf-8' // ★ application/json にするとタブレットで弾かれます
     },
     body: JSON.stringify({ 
       cart: cart,
-      people: people // ★ 人数データを取り込んで送信
+      people: people
     })
   });
   
