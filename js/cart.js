@@ -110,7 +110,11 @@ async function sendBulkOrder() {
   }
 
   try {
-    const result = await apiSendBulkOrder(tableId, state.cart);
+    // 人数データを取得（state構造に合わせて優先順で取得）
+    const peopleCount = state.guestCount || state.people || state.partySize || guestCount || 1;
+
+    // ★修正箇所：第3引数に人数（peopleCount）を追加して送信
+    const result = await apiSendBulkOrder(tableId, state.cart, peopleCount);
     
     if (result && result.status === 'success') {
       if (typeof showCustomToast === 'function') {
