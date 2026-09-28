@@ -50,20 +50,21 @@ async function apiFetchHistory(tableId) {
   return await res.json();
 }
 
-// 4. カートの一括注文を送信する
+// 4. カートの一括注文を送信する (URL・Body双方にpeopleを付与)
 async function apiSendBulkOrder(tableId, cart, people) {
-  const postUrl = `${CONFIG.GAS_URL}?action=bulk_order&tableId=${encodeURIComponent(tableId)}`;
+  const peopleNum = parseInt(people, 10) || 1;
+  const postUrl = `${CONFIG.GAS_URL}?action=bulk_order&tableId=${encodeURIComponent(tableId)}&people=${encodeURIComponent(peopleNum)}`;
   
   const response = await fetch(postUrl, {
     method: 'POST',
-    mode: 'cors',                  // ★ 明示的に cors を指定
+    mode: 'cors',
     redirect: 'follow',
     headers: {
-      'Content-Type': 'text/plain;charset=utf-8' // ★ application/json にするとタブレットで弾かれます
+      'Content-Type': 'text/plain;charset=utf-8'
     },
     body: JSON.stringify({ 
       cart: cart,
-      people: people
+      people: peopleNum
     })
   });
   
