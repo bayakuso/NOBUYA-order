@@ -1,6 +1,31 @@
 // ======================================
-// カート管理 logic
+// カート管理 logic (人数確実取得対応版)
 // ======================================
+
+// 人数を画面要素(DOM)およびstateから確実に取得するヘルパー関数
+function getSelectedGuestCount() {
+  // 1. 人数選択モーダルのセレクトボックスから取得
+  const selectEl = document.getElementById('modal-guest-count');
+  if (selectEl && selectEl.value) {
+    const val = parseInt(selectEl.value, 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+
+  // 2. ヘッダー等の人数表示要素から取得
+  const displayEl = document.getElementById('display-guest-count');
+  if (displayEl && displayEl.innerText) {
+    const val = parseInt(displayEl.innerText.replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+
+  // 3. state オブジェクトからの取得
+  if (typeof state !== 'undefined' && state) {
+    const val = parseInt(state.guestCount || state.guests || state.people || state.partySize, 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+
+  return 1;
+}
 
 // カートへの追加処理（簡易呼び出し）
 function addToCart(menuId, qtyId) {
@@ -46,14 +71,13 @@ function updateCartBadge() {
   }
 }
 
-// カートモーダルの表示更新（2回目以降の注文時にもボタン表示を必ず初期化）
+// カートモーダルの表示更新
 function openCartModal() {
   const container = document.getElementById('cart-list-items');
   const btn = document.getElementById('send-order-btn');
   
   if (container) container.innerHTML = '';
   
-  // ★重要：モーダルを開くたびにボタン表示をリセット
   if (btn) {
     btn.innerText = "注文を確定する";
   }
@@ -103,34 +127,25 @@ async function sendBulkOrder() {
     return;
   }
 
-  // 送信中の表示制御
   if (btn) {
     btn.disabled = true;
     btn.innerText = "送信中...";
   }
 
   try {
-    // 卓IDの安全な取得（stateオブジェクトまたはグローバル変数から取得）
     const currentTableId = (typeof state !== 'undefined' && state.tableId) 
       ? state.tableId 
       : (typeof tableId !== 'undefined' ? tableId : "A");
 
-    // 人数データの安全な取得
-    let peopleCount = 1;
-    if (typeof state !== 'undefined') {
-      peopleCount = state.guestCount || state.people || state.partySize || state.guests || 1;
-    } else if (typeof guestCount !== 'undefined') {
-      peopleCount = guestCount;
-    }
+    // ★ 画面で選択された人数を確実に取得
+    const peopleCount = getSelectedGuestCount();
 
-    // apiSendBulkOrder の呼び出し
     const result = await apiSendBulkOrder(currentTableId, state.cart, peopleCount);
     
     if (result && result.status === 'success') {
       if (typeof showCustomToast === 'function') {
         showCustomToast(true, 'ご注文を承りました', '厨房へ伝票を送信しました。');
       }
-      // 送信成功時にカートをクリア
       state.cart = [];
       updateCartBadge();
       
@@ -149,7 +164,6 @@ async function sendBulkOrder() {
       showCustomToast(false, '通信失敗', 'エラー詳細: ' + err.message);
     }
   } finally {
-    // ボタン表示のリセット
     if (btn) {
       btn.innerText = "注文を確定する";
       btn.disabled = (state.cart.length === 0);
